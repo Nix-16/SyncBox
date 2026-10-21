@@ -6,11 +6,11 @@ C++17 跨平台双向文件同步工具（Windows / Linux / macOS），中心服
 
 ## 当前状态
 
-> **M1 工程骨架已完成（Linux 本地验证）；同步功能尚未实现。**
+> **M1 工程骨架已完成（Linux / Windows / macOS CI 全绿）；同步功能尚未实现。**
 
 - 需求、架构、数据库、协议、冲突策略、安全、测试计划与路线图已冻结（见 `docs/`）。
 - 当前可构建，`syncbox` / `syncboxd` 仅支持 `--version` / `--help`。
-- Windows / macOS 构建尚未验证，CI 首次运行后再更新此声明。
+- 三平台构建与 4 个冒烟测试已在 GitHub Actions 通过。
 - 真实进度以 [docs/STATUS.md](docs/STATUS.md) 为准，本文档不重复其结论。
 
 ## 文档

@@ -89,7 +89,7 @@ M9 性能、跨平台验收与交付
 
 ## 2. M1 —— 工程骨架与构建系统
 
-> 状态：**Linux 本机已完成（2026-10-21）**；Windows/macOS 与 CI 待首次运行验证。
+> 状态：**已完成（2026-10-21）**；三平台 CI 7/7 通过（run `39631445766`）。
 
 ### 目标
 任何一台干净机器都能一条命令构建、运行、跑测试；三平台 CI 绿。
@@ -115,12 +115,11 @@ M9 性能、跨平台验收与交付
 11. 初始化 Git 仓库（**需用户明确授权**；当前未授权，见 STATUS）。
 
 ### 验收
-- [x] Linux 环境按 README 构建成功（aarch64，CMake 3.22，vcpkg）。
-- [ ] Windows/macOS 全新环境构建成功（待 CI）。
-- [x] `ctest --output-on-failure` 全绿（Linux，4/4）。
+- [x] Linux/Windows/macOS 环境按 README 构建成功（CI run `39631445766`）。
+- [x] `ctest --output-on-failure` 全绿（三平台，4/4）。
 - [x] `syncbox --version` 输出语义化版本（`SyncBox 0.1.0`）。
 - [x] ASan/UBSan 构建下冒烟测试无报错（Linux）。
-- [ ] CI 三平台绿，且日志可公开访问。
+- [x] CI 三平台绿，日志可公开访问（7/7 job）。
 
 ### 交付物
 可构建骨架、CI 配置、README 初版、依赖锁定文件。
