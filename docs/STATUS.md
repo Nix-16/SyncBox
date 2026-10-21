@@ -6,7 +6,7 @@
 | 当前里程碑 | **M1 本机完成（Linux）；三平台 CI 待首次运行；M2 未开始** |
 | 代码状态 | 仅工程骨架（版本/错误/Result），**无业务逻辑** |
 | 构建状态 | **可构建**：CMake 3.22 + vcpkg，Linux 本地已验证 |
-| 测试状态 | 4 个单元测试通过（Debug 与 ASan/UBSan） |
+| 测试状态 | 4 个单元测试通过（Linux 本地 Debug/ASan；CI Linux+Windows 通过） |
 | 版本控制 | Git 已初始化，远端 `github.com/Nix-16/SyncBox` |
 
 > 本文档是项目真实状态的唯一依据。任何“已完成”的声明必须在此处有对应条目与证据（文件路径、命令输出、测试名称）。**当前没有任何同步功能可用。**
@@ -104,7 +104,9 @@ Git 仓库已初始化（`main` 分支），远端 `origin` 指向 `github.com/N
 | ASan/UBSan | `cmake --preset asan && cmake --build --preset asan && ctest --preset asan` | 4/4 通过 |
 | 版本命令 | `./build/dev/syncbox --version` / `./build/dev/syncboxd --version` | `SyncBox 0.1.0` / `SyncBox server 0.1.0` |
 
-> 环境说明：本机 vcpkg 版本要求 CMake 4.3.2，而 GitHub/Kitware 下载被限速到 ~50 KB/s，无法在合理时间内完成下载。因此本地验证使用 `VCPKG_FORCE_SYSTEM_BINARIES=1` 复用系统 CMake 3.22，并且只安装 M1 所需的 spdlog/gtest。CI 使用 `lukka/run-vcpkg` 正常路径。**Windows/macOS 尚未验证。**
+> 环境说明：本机 vcpkg 版本要求 CMake 4.3.2，而 GitHub/Kitware 下载被限速到 ~50 KB/s，无法在合理时间内完成下载。因此本地验证使用 `VCPKG_FORCE_SYSTEM_BINARIES=1` 复用系统 CMake 3.22，并且只安装 M1 所需的 spdlog/gtest。CI 使用 `lukka/run-vcpkg` 正常路径。
+
+CI 首次运行（run `39630110288`）：Ubuntu Debug/Release/ASan 与 Windows Debug/Release **全部成功**；macOS 使用 `macos-13` 排队 9 分钟未分配 runner，已切换为 `macos-14` 并重新触发，结果待记录。**macOS 尚未验证。**
 
 ---
 
