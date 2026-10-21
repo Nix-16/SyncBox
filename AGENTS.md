@@ -15,10 +15,10 @@ SyncBox：C++17 跨平台（Windows/Linux/macOS）双向文件同步工具，中
 
 | 项 | 状态 |
 |---|---|
-| 当前里程碑 | **M0 已完成，M1 未开始** |
-| 业务代码 | **0 行** |
-| 构建系统 | **不存在** |
-| 测试 | **不存在，未运行过任何测试** |
+| 当前里程碑 | **M1 本机完成（Linux）；三平台 CI 待运行；M2 未开始** |
+| 业务代码 | **0 行**（仅有版本/错误/Result 骨架） |
+| 构建系统 | CMake 3.22 + vcpkg manifest（可用） |
+| 测试 | 4 个冒烟测试；Linux Debug 与 ASan/UBSan 通过 |
 | Git 仓库 | 已初始化（`main`），远端 `origin` = `github.com/Nix-16/SyncBox` |
 
 完整状态见 [docs/STATUS.md](docs/STATUS.md)。**在 M1 完成前，不要声称项目“可构建”“可运行”“测试通过”。**
@@ -137,16 +137,28 @@ SyncBox：C++17 跨平台（Windows/Linux/macOS）双向文件同步工具，中
 
 ---
 
-## 9. 构建与测试（M1 起生效）
+## 9. 构建与测试（M1 已建立）
 
-> **当前不存在构建系统，以下命令尚不可用。** M1 完成后在此处补充真实命令，并删除本提示。
+依赖使用 vcpkg manifest 模式，基线锁定在 `vcpkg.json` 的 `builtin-baseline`。
 
 ```bash
-# 预期形式（M1 落地后以实际为准）
-cmake --preset linux-debug          # 或 dev / release
-cmake --build --preset linux-debug
-ctest --preset linux-debug --output-on-failure
+# 一次性：准备 vcpkg 与工具链
+git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
+~/vcpkg/bootstrap-vcpkg.sh
+export VCPKG_ROOT=~/vcpkg
+
+# 配置 / 构建 / 测试
+cmake --preset dev                 # 或 release / asan
+cmake --build --preset dev
+ctest --preset dev --output-on-failure
 ```
+
+- 可执行文件：`build/dev/syncbox`、`build/dev/syncboxd`（当前仅 `--version` / `--help`）。
+- `SYNCBOX_SANITIZE=ON`（`asan` preset）仅在 GCC/Clang 下可用。
+- 新增源文件后必须重新运行配置步骤。
+- 修改 `vcpkg.json` 后必须提交新的 `builtin-baseline` 并说明原因。
+- 依赖按里程碑通过 vcpkg feature 启用（M1 默认仅 `spdlog`、`gtest`）；启用示例：
+  `cmake --preset dev -DVCPKG_MANIFEST_FEATURES="storage;unicode"`。
 
 要求：
 

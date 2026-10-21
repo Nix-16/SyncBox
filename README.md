@@ -6,10 +6,11 @@ C++17 跨平台双向文件同步工具（Windows / Linux / macOS），中心服
 
 ## 当前状态
 
-> **M0 已完成，尚未开始编码。仓库中没有任何可运行代码。**
+> **M1 工程骨架已完成（Linux 本地验证）；同步功能尚未实现。**
 
 - 需求、架构、数据库、协议、冲突策略、安全、测试计划与路线图已冻结（见 `docs/`）。
-- 构建系统、源代码与测试将在 M1 开始建立。
+- 当前可构建，`syncbox` / `syncboxd` 仅支持 `--version` / `--help`。
+- Windows / macOS 构建尚未验证，CI 首次运行后再更新此声明。
 - 真实进度以 [docs/STATUS.md](docs/STATUS.md) 为准，本文档不重复其结论。
 
 ## 文档
@@ -34,7 +35,30 @@ C++17 · CMake · Boost.Asio/Beast · SQLite · OpenSSL · spdlog · GoogleTest 
 
 ## 构建
 
-M1 完成后补充。当前仓库没有 `CMakeLists.txt`，无法构建。
+前置：CMake ≥ 3.22、Ninja、支持 C++17 的编译器、[vcpkg](https://github.com/microsoft/vcpkg)（manifest 模式，基线已在 `vcpkg.json` 锁定）。
+
+```bash
+git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
+~/vcpkg/bootstrap-vcpkg.sh
+
+export VCPKG_ROOT=~/vcpkg
+cmake --preset dev
+cmake --build --preset dev
+ctest --preset dev
+```
+
+产物：`build/dev/syncbox`、`build/dev/syncboxd`。
+
+当前里程碑为 M1，两个可执行文件仅支持 `--version` / `--help`，**尚不具备同步能力**。
+
+Windows 下若未安装 Ninja，可改用 Visual Studio 生成器：
+
+```powershell
+cmake -S . -B build -G "Visual Studio 17 2022" `
+  -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+cmake --build build --config Debug
+ctest --test-dir build -C Debug --output-on-failure
+```
 
 ## 许可
 

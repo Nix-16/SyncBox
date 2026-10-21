@@ -3,13 +3,13 @@
 | 项目 | 内容 |
 |---|---|
 | 报告日期 | 2026-10-21 |
-| 当前里程碑 | **M0 完成，M1 未开始** |
-| 代码状态 | **零实现** |
-| 构建状态 | **无构建系统，无法编译** |
-| 测试状态 | **无测试，未运行任何测试** |
-| 版本控制 | **不是 Git 仓库**（未初始化，等待授权） |
+| 当前里程碑 | **M1 本机完成（Linux）；三平台 CI 待首次运行；M2 未开始** |
+| 代码状态 | 仅工程骨架（版本/错误/Result），**无业务逻辑** |
+| 构建状态 | **可构建**：CMake 3.22 + vcpkg，Linux 本地已验证 |
+| 测试状态 | 4 个单元测试通过（Debug 与 ASan/UBSan） |
+| 版本控制 | Git 已初始化，远端 `github.com/Nix-16/SyncBox` |
 
-> 本文档是项目真实状态的唯一依据。任何“已完成”的声明必须在此处有对应条目与证据（文件路径、命令输出、测试名称）。**当前不存在任何已实现功能。**
+> 本文档是项目真实状态的唯一依据。任何“已完成”的声明必须在此处有对应条目与证据（文件路径、命令输出、测试名称）。**当前没有任何同步功能可用。**
 
 ---
 
@@ -33,8 +33,17 @@ M0 交付后的内容：
 | `docs/TEST_PLAN.md` | 测试计划 |
 | `docs/SECURITY.md` | 安全设计 |
 | `docs/STATUS.md` | 本文件 |
+| `CMakeLists.txt` | 顶层构建（M1） |
+| `CMakePresets.json` | `dev` / `release` / `asan` 预设 |
+| `vcpkg.json` | vcpkg manifest，baseline 锁定 |
+| `cmake/CompilerWarnings.cmake` | 编译警告策略 |
+| `include/syncbox/core/` | `version.hpp`、`error.hpp`、`result.hpp` |
+| `src/core/` | `version.cpp`、`error.cpp` |
+| `apps/syncbox/`、`apps/syncboxd/` | CLI 骨架（`--version`/`--help`） |
+| `tests/unit/` | GoogleTest 冒烟测试 |
+| `.github/workflows/ci.yml` | 三平台 CI（尚未在 GitHub 上运行） |
 
-**仍然不存在**：`CMakeLists.txt`、`src/`、`include/`、`tests/`、`apps/`、CI 配置、依赖锁文件、任何 `.cpp/.h/.hpp` 文件。
+**仍然不存在**：`proto/`、`store/`、`fs/`、`net/`、`client/`、`server/` 模块，Qt GUI，数据库 schema 文件，任何同步业务代码。
 
 Git 仓库已初始化（`main` 分支），远端 `origin` 指向 `github.com/Nix-16/SyncBox`。
 
@@ -67,9 +76,9 @@ Git 仓库已初始化（`main` 分支），远端 `origin` 指向 `github.com/N
 | FR-13 | Qt 桌面界面 | ✅ ROADMAP M7（概要） | ❌ | ❌ | 未实现 |
 | FR-14 | 认证/TLS/路径安全/撤销 | ✅ SECURITY | ❌ | ❌ | 未实现 |
 | FR-15 | 测试体系 | ✅ TEST_PLAN | ❌ | ❌ | 未实现 |
-| FR-16 | 构建/文档/演示 | ✅ 部分（M0 文档） | ❌ | ❌ | 未实现 |
+| FR-16 | 构建/文档/演示 | ✅ 部分（M0 文档） | ⚠️ 仅构建骨架 | ✅ 冒烟 4 项 | 部分实现（工程骨架，无业务） |
 
-**没有任何功能可以声称“可用”。**
+**没有任何同步功能可以声称“可用”。**
 
 ---
 
@@ -77,13 +86,25 @@ Git 仓库已初始化（`main` 分支），远端 `origin` 指向 `github.com/N
 
 | 类别 | 数量 | 说明 |
 |---|---|---|
-| C++ 源文件 | 0 | — |
-| 头文件 | 0 | — |
-| CMake 文件 | 0 | — |
-| 测试文件 | 0 | — |
-| 脚本 | 0 | — |
+| C++ 源文件 | 4 | `version.cpp`、`error.cpp`、两个 `main.cpp` |
+| 头文件 | 3 | `version.hpp`、`error.hpp`、`result.hpp` |
+| CMake 文件 | 3 | 顶层、`tests/`、警告模块 |
+| 测试文件 | 1 | `core_smoke_test.cpp`（4 个用例） |
+| CI 配置 | 1 | GitHub Actions 三平台矩阵 + sanitizer |
 | 数据库 schema 文件 | 0（仅文档中的 DDL） | — |
-| 可执行产物 | 0 | — |
+| 可执行产物 | 2 | `syncbox`、`syncboxd`（仅 `--version`/`--help`） |
+
+### M1 验证证据（2026-10-21，Linux aarch64）
+
+| 项 | 实际命令 | 实际结果 |
+|---|---|---|
+| 配置 | `VCPKG_FORCE_SYSTEM_BINARIES=1 VCPKG_ROOT=~/vcpkg cmake --preset dev` | 成功；vcpkg 安装 spdlog 1.17.0、gtest 1.17.0 |
+| 编译 | `cmake --build --preset dev` | 成功，9 个构建步骤 |
+| 测试 | `ctest --preset dev --output-on-failure` | 4/4 通过 |
+| ASan/UBSan | `cmake --preset asan && cmake --build --preset asan && ctest --preset asan` | 4/4 通过 |
+| 版本命令 | `./build/dev/syncbox --version` / `./build/dev/syncboxd --version` | `SyncBox 0.1.0` / `SyncBox server 0.1.0` |
+
+> 环境说明：本机 vcpkg 版本要求 CMake 4.3.2，而 GitHub/Kitware 下载被限速到 ~50 KB/s，无法在合理时间内完成下载。因此本地验证使用 `VCPKG_FORCE_SYSTEM_BINARIES=1` 复用系统 CMake 3.22，并且只安装 M1 所需的 spdlog/gtest。CI 使用 `lukka/run-vcpkg` 正常路径。**Windows/macOS 尚未验证。**
 
 ---
 
@@ -91,8 +112,8 @@ Git 仓库已初始化（`main` 分支），远端 `origin` 指向 `github.com/N
 
 | 编号 | 风险 | 影响 | 当前处置 |
 |---|---|---|---|
-| R-01 | 项目仅有设计，无实现 | 无法演示、无法验证假设 | M1 立即开始 |
-| R-02 | 无 CI、无远端验证 | 无法证明三平台可用、无法协作 | M1 建立 CI；首次推送后验证远端可克隆 |
+| R-01 | 仅有工程骨架，业务未实现 | 无法演示同步、无法验证设计 | M2 起按里程碑实现 |
+| R-02 | CI 尚未在 GitHub 上运行 | 三平台可用性未证明 | 推送后检查首次 Actions 结果 |
 | R-03 | 依赖获取方式未定 | M1 构建可能受阻 | M1 首日决策（FetchContent vs vcpkg） |
 | R-04 | 三平台监控语义差异 | 事件丢失/重复 | 设计已含核对兜底；M3 专项测试 |
 | R-05 | 冲突策略复杂 | 实现偏离规范 | 以 CONFLICTS §9 示例作为回归用例 |
@@ -131,13 +152,13 @@ Git 仓库已初始化（`main` 分支），远端 `origin` 指向 `github.com/N
 | 初稿 `pending_ops.file_id` 对 create 为 NULL，无法满足唯一索引 | 采用部分索引 `WHERE file_id IS NOT NULL`，见 DATABASE §3.1 |
 | 初稿 `conflicts.resolution` 无“restore”取值 | 枚举增加 `restored`，见 DATABASE §3.1 与 CONFLICTS §4.3 |
 | 初稿 `seq` 曾设计为每空间独立计数器 | 统一为全局 `AUTOINCREMENT`，简化并保证原子性 |
+| 依赖管理方式未定 | M1 决策为 vcpkg manifest，基线锁定于 `vcpkg.json` |
 | 初稿 `update` 允许同时改路径 | 改为“移动 + 编辑 = rename + update 两条操作”，见 CONFLICTS V-5 |
 
 ### 5.2 仍未闭环的设计问题（需后续里程碑决定）
 
 | 编号 | 问题 | 影响范围 | 建议决策点 |
 |---|---|---|---|
-| O-01 | 依赖管理：CMake FetchContent vs vcpkg manifest | M1 | M1 第 1 天 |
 | O-02 | Unicode 折叠实现：utf8proc vs Boost.Locale/ICU | core、server | M1–M2 |
 | O-03 | 客户端 create 在服务端分配 `file_id` 前使用何种本地临时 ID | client、DB | M2 |
 | O-04 | 快照分页如何保证同一 `snapshot_seq` 的一致视图（临时表 vs 重复查询） | M4 | M4 |
@@ -157,29 +178,28 @@ Git 仓库已初始化（`main` 分支），远端 `origin` 指向 `github.com/N
 
 | 需求 | 差距 |
 |---|---|
-| 可运行的同步工具 | 完全缺失（0 行代码） |
-| 三平台支持 | 无构建、无平台代码 |
-| 服务端 | 不存在 |
+| 可运行的同步工具 | 仅有 CLI 骨架，无同步能力 |
+| 三平台支持 | 仅 Linux 本机构建验证；Windows/macOS 未验证 |
+| 服务端 | 仅有 `--version` 骨架，无 HTTP 服务 |
 | 数据库 | 仅文档 DDL，无 schema 文件、无迁移代码 |
 | 协议 | 仅文档，无实现 |
-| 测试 | 无测试、无 CI、无测试结果 |
+| 测试 | 4 个冒烟测试通过（Linux）；CI 未运行，无三平台结果 |
 | 性能 | 无任何测量 |
 | 安全 | 无实现、无审计 |
-| 文档 | M0 前为空；现已有设计文档，但 README、构建说明、演示脚本仍缺失 |
+| 文档 | 设计文档、README、构建说明已有；演示脚本仍缺失 |
 
 ---
 
-## 7. 下一步（M1）
+## 7. 下一步（M2）
 
-按 [ROADMAP.md](ROADMAP.md) §13 执行，顺序：
+M1 本机已完成；待办与 M2 任务：
 
-1. 确认依赖管理方式（O-01）。
-2. 建立目录骨架与 CMake。
-3. 接入依赖并锁定版本。
-4. `syncbox_core` 最小实现（版本号、错误码）。
-5. `syncbox`/`syncboxd` 骨架与 `--version`。
-6. GoogleTest + CTest 冒烟测试。
-7. 三平台 CI。
-8. 更新本文档与 `AGENTS.md` 的构建/测试命令。
+1. 推送后检查 GitHub Actions 首次三平台结果；修复平台差异。
+2. 启用 `storage`、`unicode` feature（sqlite3、utf8proc）。
+3. `core/version_model`：`FileId/OpId/Revision/Seq/ContentHash/OpKind`。
+4. `core/path`：NFC、casefold、保留名、长度校验（对应 UT-CORE-01..08）。
+5. `core/hash`：OpenSSL EVP 流式 SHA-256（对应 UT-CORE-07）。
+6. 服务端与客户端 schema、迁移、Repository（对应 UT-DB-01..06）。
+7. 崩溃与事务不变量测试（FI-16 雏形）。
 
-**M1 完成前，不得开始 M2 及以后的业务实现。**
+**在 M2 验收前，不得开始文件监控、网络或同步引擎实现。**

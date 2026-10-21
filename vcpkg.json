@@ -1,0 +1,49 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "syncbox",
+  "version-string": "0.1.0",
+  "description": "Cross-platform bidirectional file synchronization tool",
+  "builtin-baseline": "eb35a05cc21c69ec1399f7532b7dd61d271ac0d1",
+  "dependencies": [
+    "gtest",
+    "spdlog"
+  ],
+  "features": {
+    "networking": {
+      "description": "Boost.Asio/Beast networking (M4)",
+      "dependencies": [
+        "boost-asio"
+      ]
+    },
+    "storage": {
+      "description": "SQLite metadata storage (M2)",
+      "dependencies": [
+        "sqlite3"
+      ]
+    },
+    "crypto": {
+      "description": "OpenSSL EVP hashing and TLS (M2/M6)",
+      "dependencies": [
+        "openssl"
+      ]
+    },
+    "json": {
+      "description": "JSON protocol encoding (M4)",
+      "dependencies": [
+        "nlohmann-json"
+      ]
+    },
+    "unicode": {
+      "description": "NFC normalization and case folding (M2)",
+      "dependencies": [
+        "utf8proc"
+      ]
+    },
+    "gui": {
+      "description": "Qt 6 desktop client (M7)",
+      "dependencies": [
+        "qtbase"
+      ]
+    }
+  }
+}

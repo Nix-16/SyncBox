@@ -89,20 +89,22 @@ M9 性能、跨平台验收与交付
 
 ## 2. M1 —— 工程骨架与构建系统
 
+> 状态：**Linux 本机已完成（2026-10-21）**；Windows/macOS 与 CI 待首次运行验证。
+
 ### 目标
 任何一台干净机器都能一条命令构建、运行、跑测试；三平台 CI 绿。
 
 ### 任务
 1. 目录结构（见 ARCHITECTURE §2.1）。
-2. CMake ≥ 3.24：
+2. CMake ≥ 3.22（当前开发机为 3.22.1；若后续依赖要求更高再提升）：
    - 顶层 `CMakeLists.txt`、`cmake/`（CompilerWarnings、Sanitizers、Dependencies、Install）。
    - 目标：`syncbox_core`、`syncbox_proto`、`syncbox_store`、`syncbox_fs`、`syncbox_net`、`syncbox_client`、`syncbox_server`、`syncbox`(CLI)、`syncboxd`、`syncbox-gui`（M7 占位）。
    - C++17，无扩展（`CXX_EXTENSIONS OFF`）。
-3. 依赖管理（三选一，M1 决策并写入 ARCHITECTURE）：
-   - 首选：CMake `FetchContent` 固定 tag + SHA256；
-   - Windows 可用 vcpkg manifest；
-   - 禁止未锁定的 `master` 分支。
-   - 依赖：Boost（Asio/Beast/System）、SQLite3、OpenSSL、spdlog、GoogleTest、nlohmann/json、utf8proc；Qt 6.5+ 仅 GUI。
+3. 依赖管理：**已决策使用 vcpkg manifest 模式**（`vcpkg.json`，`builtin-baseline` 锁定提交）。
+   - 默认依赖（M1 即启用）：`spdlog`、`gtest`。
+   - 其余按里程碑通过 feature 启用：`storage`（sqlite3，M2）、`unicode`（utf8proc，M2）、`networking`（boost-asio，M4）、`json`（nlohmann-json，M4）、`crypto`（openssl，M2/M6）、`gui`（qtbase，M7）。
+   - 启用方式：配置时加 `-DVCPKG_MANIFEST_FEATURES="storage;unicode"`（或 `--x-feature`，以所用 vcpkg 版本为准）。
+   - 禁止未锁定的 `master` 分支；禁止在 M1 提前安装 Qt。
 4. 日志：spdlog 封装 `common/log`，JSON sink 占位。
 5. 错误模型：`Result<T, Error>` 或 `std::expected` 兼容封装；统一错误码枚举（与 PROTOCOL §1.5 对应）。
 6. 配置：TOML 解析（toml++ 或手写子集），schema 校验。
@@ -113,10 +115,11 @@ M9 性能、跨平台验收与交付
 11. 初始化 Git 仓库（**需用户明确授权**；当前未授权，见 STATUS）。
 
 ### 验收
-- [ ] Linux/Windows/macOS 全新环境按 README 构建成功（记录耗时）。
-- [ ] `ctest --output-on-failure` 全绿。
-- [ ] `syncbox --version` 输出语义化版本。
-- [ ] ASan/UBSan 构建下冒烟测试无报错。
+- [x] Linux 环境按 README 构建成功（aarch64，CMake 3.22，vcpkg）。
+- [ ] Windows/macOS 全新环境构建成功（待 CI）。
+- [x] `ctest --output-on-failure` 全绿（Linux，4/4）。
+- [x] `syncbox --version` 输出语义化版本（`SyncBox 0.1.0`）。
+- [x] ASan/UBSan 构建下冒烟测试无报错（Linux）。
 - [ ] CI 三平台绿，且日志可公开访问。
 
 ### 交付物

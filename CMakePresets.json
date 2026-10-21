@@ -1,0 +1,68 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 22,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "dev",
+      "displayName": "Developer (Debug)",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "SYNCBOX_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "SYNCBOX_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "asan",
+      "displayName": "Debug + ASan/UBSan (GCC/Clang)",
+      "inherits": "dev",
+      "cacheVariables": {
+        "SYNCBOX_SANITIZE": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "dev", "configurePreset": "dev" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "asan", "configurePreset": "asan" }
+  ],
+  "testPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

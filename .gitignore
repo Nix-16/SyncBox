@@ -5,11 +5,12 @@ cmake-build-*/
 compile_commands.json
 CMakeUserPresets.json
 
-# IDE
+# IDE / tooling
 .idea/
 .vscode/
 .vs/
 *.user
+.claude/
 
 # OS
 .DS_Store
