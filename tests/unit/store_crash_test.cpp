@@ -16,16 +16,27 @@ using syncbox::test::TempDirectory;
 TEST(StoreCrashTest, UncommittedTransactionDoesNotSurviveProcessDeath) {
   const char* writer = std::getenv("SYNCBOX_CRASH_WRITER");
   ASSERT_NE(writer, nullptr) << "SYNCBOX_CRASH_WRITER is not set by the test harness";
+  ASSERT_TRUE(std::filesystem::exists(writer)) << "crash writer not found: " << writer;
 
   TempDirectory directory;
   const auto db_path = directory.file("client.db");
 
   const std::string command =
       std::string("\"") + writer + "\" \"" + db_path.string() + "\"";
-  const int exit_code = std::system(command.c_str());
-  EXPECT_NE(exit_code, 0) << "crash writer should terminate without committing";
 
-  ASSERT_TRUE(std::filesystem::exists(db_path));
+  // cmd.exe strips the first and last quote of a command line that starts with
+  // a quote, so the whole command needs one extra pair of quotes on Windows.
+#ifdef _WIN32
+  const std::string shell_command = "\"" + command + "\"";
+#else
+  const std::string shell_command = command;
+#endif
+
+  const int exit_code = std::system(shell_command.c_str());
+  EXPECT_NE(exit_code, 0) << "crash writer should terminate without committing; command: "
+                          << shell_command;
+  ASSERT_TRUE(std::filesystem::exists(db_path))
+      << "database was not created; exit code " << exit_code << ", command: " << shell_command;
 
   auto reopened = syncbox::ClientStore::open(db_path.string());
   ASSERT_TRUE(reopened);

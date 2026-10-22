@@ -46,7 +46,7 @@ jobs:
         run: |
           log=build/Testing/Temporary/LastTest.log
           if [ -f "$log" ]; then
-            grep -aE "Test #|Failed|FAILED|Exception|what\\(\\)" "$log" | tail -80 | while IFS= read -r line; do
+            grep -aE "Test #|Failed|FAILED|Exception|what\\(\\)|Value of:|Expected|Actual|exit code|not found" "$log" | tail -100 | while IFS= read -r line; do
               echo "::error title=CTest::$line"
             done
           else
@@ -87,7 +87,7 @@ jobs:
         run: |
           log=build/Testing/Temporary/LastTest.log
           if [ -f "$log" ]; then
-            grep -aE "Test #|Failed|FAILED|Exception|what\\(\\)" "$log" | tail -80 | while IFS= read -r line; do
+            grep -aE "Test #|Failed|FAILED|Exception|what\\(\\)|Value of:|Expected|Actual|exit code|not found" "$log" | tail -100 | while IFS= read -r line; do
               echo "::error title=CTest::$line"
             done
           else
