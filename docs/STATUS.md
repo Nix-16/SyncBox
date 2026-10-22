@@ -3,10 +3,10 @@
 | 项目 | 内容 |
 |---|---|
 | 报告日期 | 2026-10-21 |
-| 当前里程碑 | **M2 本机完成（Linux）；三平台 CI 待运行；M3 未开始** |
+| 当前里程碑 | **M2 完成（三平台 CI 全绿）；M3 未开始** |
 | 代码状态 | core 模型/路径/哈希 + 两库 schema/Repository；**无同步引擎** |
 | 构建状态 | **可构建**：CMake 3.22 + vcpkg（storage/unicode/crypto features） |
-| 测试状态 | 34 个单元测试通过（Linux Debug 与 ASan/UBSan） |
+| 测试状态 | 34 个单元测试；CI 7/7 job 通过（三平台 Debug/Release + ASan/UBSan） |
 | 版本控制 | Git 已初始化，远端 `github.com/Nix-16/SyncBox` |
 
 > 本文档是项目真实状态的唯一依据。任何“已完成”的声明必须在此处有对应条目与证据（文件路径、命令输出、测试名称）。**当前没有任何同步功能可用。**
@@ -126,6 +126,10 @@ CI 运行（run [39631445766](https://github.com/Nix-16/SyncBox/actions/runs/396
 
 > 环境说明：本机访问 GitHub 被限速/中断，OpenSSL 与 utf8proc 源码通过镜像下载后放入 vcpkg 下载缓存，由 vcpkg 校验哈希后使用。该操作不改变依赖版本与 manifest。
 
+CI 运行（run [39813188841](https://github.com/Nix-16/SyncBox/actions/runs/39813188841)，提交 `ce19b11`）：**7/7 job 成功** —— Ubuntu Debug/Release、Windows Debug/Release、macOS-14 Debug/Release、ASan+UBSan。
+
+> Windows 首轮失败定位过程：`StoreCrashTest` 在 cmd.exe 下因首尾引号被剥离而无法启动 helper；已通过整串加引号修复。CI 现会在失败时把测试结果输出为注解。
+
 ---
 
 ## 4. 已知风险
@@ -137,7 +141,7 @@ CI 运行（run [39631445766](https://github.com/Nix-16/SyncBox/actions/runs/396
 | R-03 | 本机访问 GitHub 受限速/中断 | 依赖安装可能失败 | 预置 vcpkg 下载缓存；CI 网络正常 |
 | R-04 | 三平台监控语义差异 | 事件丢失/重复 | 设计已含核对兜底；M3 专项测试 |
 | R-05 | 冲突策略复杂 | 实现偏离规范 | 以 CONFLICTS §9 示例作为回归用例 |
-| R-06 | M2 变更尚未在 CI 运行 | 三平台兼容性未验证 | 推送后观察 Actions 结果 |
+| R-06 | Windows 仅有 CI 环境，无本地开发机 | 平台问题只能靠 CI 与注解定位 | 失败注解 + 小步提交 |
 | R-07 | 文档量大 | 可能与实现漂移 | AGENTS.md 强制同步更新 + M9 审计 |
 | R-08 | SQLite 单写者 | 服务端吞吐上限 | 短事务；M9 基准验证 |
 | R-09 | 无 E2EE | 服务端可读明文 | 已在 PRD/SECURITY 明示，v2 议题 |
@@ -189,6 +193,7 @@ CI 运行（run [39631445766](https://github.com/Nix-16/SyncBox/actions/runs/396
 | O-09 | Windows 长路径（`\\?\`）策略与打包要求 | M3/M9 | M3 |
 | O-10 | 自签名 CA 的演示流程与文档 | M8/M9 | M8 |
 | O-11 | 客户端 token 轮换机制（SECURITY 残余风险） | M8 | M8 |
+| O-12 | M3 验收原引用 TC-100..114（需要服务端+同步引擎，M5 才具备） | ROADMAP/TEST_PLAN | M3 门禁改为 UT-FS/TC-FS；同步用例在 M5 回归（本次已修订 ROADMAP M3） |
 
 > 这些问题不影响 M0 文档作为基线成立；实现时必须在对应文档中补充决策并更新本表。
 
