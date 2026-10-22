@@ -87,9 +87,12 @@ Result<void> atomic_replace(const std::filesystem::path& target,
     }
   }
 
+  // The rename is the atomic operation. Directory FlushFileBuffers is a
+  // durability hint and is not supported on every Windows filesystem, so a
+  // failure here must not turn a successful replace into an error.
   const auto parent = target.parent_path();
   if (!parent.empty()) {
-    return sync_directory(parent);
+    (void)sync_directory(parent);
   }
   return Result<void>{};
 }

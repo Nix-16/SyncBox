@@ -46,7 +46,8 @@ TEST(AtomicFileTest, ReplacesTargetAndConsumesTemp) {
     stream << "new-content";
   }
   ASSERT_TRUE(syncbox::fs::sync_file(temp.value()));
-  ASSERT_TRUE(syncbox::fs::atomic_replace(target, temp.value()));
+  auto replaced = syncbox::fs::atomic_replace(target, temp.value());
+  ASSERT_TRUE(replaced) << replaced.error().message;
 
   EXPECT_EQ(read_file(target), "new-content");
   EXPECT_FALSE(std::filesystem::exists(temp.value()));
@@ -63,7 +64,8 @@ TEST(AtomicFileTest, ReplacesMissingTarget) {
     stream << "created";
   }
   ASSERT_TRUE(syncbox::fs::sync_file(temp.value()));
-  ASSERT_TRUE(syncbox::fs::atomic_replace(target, temp.value()));
+  auto replaced = syncbox::fs::atomic_replace(target, temp.value());
+  ASSERT_TRUE(replaced) << replaced.error().message;
 
   EXPECT_EQ(read_file(target), "created");
 }

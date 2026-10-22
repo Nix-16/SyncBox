@@ -60,9 +60,6 @@ void write_file(const std::filesystem::path& path, const std::string& content) {
 }  // namespace
 
 TEST(WatchTest, ReportsCreateRenameAndDelete) {
-#if !defined(__linux__)
-  GTEST_SKIP() << "watcher assertions are currently enabled on Linux only";
-#else
   syncbox::test::TempDirectory directory;
   RecordingSink sink;
 
@@ -82,13 +79,27 @@ TEST(WatchTest, ReportsCreateRenameAndDelete) {
   std::filesystem::rename(directory.file("a.txt"), directory.file("b.txt"), error);
   ASSERT_FALSE(error);
 
-  EXPECT_TRUE(sink.wait_for(
+  const bool paired_rename = sink.wait_for(
       [](const syncbox::fs::WatchEvent& event) {
         return event.kind == syncbox::fs::WatchEventKind::Renamed &&
                event.path == "b.txt" && event.old_path.has_value() &&
                *event.old_path == "a.txt";
       },
-      std::chrono::seconds(5)));
+      std::chrono::seconds(5));
+
+  if (!paired_rename) {
+    // FSEvents reports both sides of a rename without pairing them.
+    EXPECT_TRUE(sink.wait_for(
+        [](const syncbox::fs::WatchEvent& event) {
+          return event.kind == syncbox::fs::WatchEventKind::Removed && event.path == "a.txt";
+        },
+        std::chrono::seconds(5)));
+    EXPECT_TRUE(sink.wait_for(
+        [](const syncbox::fs::WatchEvent& event) {
+          return event.kind == syncbox::fs::WatchEventKind::Created && event.path == "b.txt";
+        },
+        std::chrono::seconds(5)));
+  }
 
   std::filesystem::remove(directory.file("b.txt"), error);
   ASSERT_FALSE(error);
@@ -101,5 +112,4 @@ TEST(WatchTest, ReportsCreateRenameAndDelete) {
 
   watcher.value()->stop();
   EXPECT_TRUE(sink.errors().empty());
-#endif
 }

@@ -33,6 +33,12 @@ class MacWatcher final : public Watcher {
  public:
   MacWatcher(std::filesystem::path root, WatchSink& sink)
       : root_(std::move(root)), sink_(sink) {
+    // FSEvents reports canonical paths; /var is a symlink to /private/var.
+    std::error_code error;
+    const auto canonical = std::filesystem::weakly_canonical(root_, error);
+    if (!error) {
+      root_ = canonical;
+    }
     root_prefix_ = root_.u8string();
     if (!root_prefix_.empty() && root_prefix_.back() != '/') {
       root_prefix_.push_back('/');
