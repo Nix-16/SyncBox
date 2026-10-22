@@ -81,6 +81,25 @@ TEST(ChangeDetectorTest, PairsRenameByFileIdentity) {
   EXPECT_EQ(find_change(changes, syncbox::fs::ChangeKind::Deleted, "a.txt"), nullptr);
 }
 
+TEST(ChangeDetectorTest, ReconcileDetectsChangesMissedByWatcher) {
+  // FI-13 at the filesystem level: no watcher is running, so the changes are
+  // invisible until a periodic scan compares snapshots.
+  syncbox::test::TempDirectory directory;
+  write_file(directory.file("kept.txt"), "one");
+  const auto before = scan(directory.path());
+
+  write_file(directory.file("kept.txt"), "two-longer");
+  write_file(directory.file("missed.txt"), "created while unwatched");
+  std::filesystem::remove(directory.file("kept.txt"));
+  write_file(directory.file("kept.txt"), "recreated");
+
+  const auto after = scan(directory.path());
+  const auto changes = syncbox::fs::diff_scans(before, after);
+
+  ASSERT_NE(find_change(changes, syncbox::fs::ChangeKind::Created, "missed.txt"), nullptr);
+  ASSERT_NE(find_change(changes, syncbox::fs::ChangeKind::Modified, "kept.txt"), nullptr);
+}
+
 TEST(ChangeDetectorTest, IdenticalScansProduceNoChanges) {
   syncbox::test::TempDirectory directory;
   write_file(directory.file("a.txt"), "aaa");

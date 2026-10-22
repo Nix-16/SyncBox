@@ -3,10 +3,10 @@
 | 项目 | 内容 |
 |---|---|
 | 报告日期 | 2026-10-21 |
-| 当前里程碑 | **M3 进行中：文件系统层已实现（Linux 本机）；平台后端待 CI** |
-| 代码状态 | core + store + fs（扫描/忽略/原子替换/抑制/Linux watcher）；**无同步引擎** |
+| 当前里程碑 | **M3 完成（三平台 CI 全绿；FI-14 压力注入留 M5）；M4 未开始** |
+| 代码状态 | core + store + fs（扫描/差分/原子替换/抑制/三平台 watcher）；**无同步引擎** |
 | 构建状态 | **可构建**：CMake 3.22 + vcpkg（storage/unicode/crypto features） |
-| 测试状态 | 50 个单元测试本地通过（Debug 与 ASan/UBSan）；Windows/macOS 待 CI |
+| 测试状态 | 56 个单元测试；CI 7/7 job 通过（三平台 Debug/Release + ASan/UBSan） |
 | 版本控制 | Git 已初始化，远端 `github.com/Nix-16/SyncBox` |
 
 > 本文档是项目真实状态的唯一依据。任何“已完成”的声明必须在此处有对应条目与证据（文件路径、命令输出、测试名称）。**当前没有任何同步功能可用。**
@@ -41,6 +41,8 @@ M0 交付后的内容：
 | `src/core/` | 上述 core 模块实现 |
 | `include/syncbox/store/` | `database`、`migrations`、`server_store`、`client_store` |
 | `src/store/` | SQLite 封装、两库迁移、服务端/客户端 Repository |
+| `include/syncbox/fs/` | 扫描、忽略、差分、去抖、原子文件、抑制、watcher |
+| `src/fs/` | 通用实现 + Linux/Windows/macOS 平台后端 |
 | `apps/syncbox/`、`apps/syncboxd/` | CLI 骨架（`--version`/`--help`） |
 | `tests/unit/` | 34 个 GoogleTest 用例（core + store + 崩溃注入） |
 | `tests/helpers/` | `crash_writer`（FI-16 子进程夹具） |
@@ -90,13 +92,13 @@ Git 仓库已初始化（`main` 分支），远端 `origin` 指向 `github.com/N
 
 | 类别 | 数量 | 说明 |
 |---|---|---|
-| C++ 源文件 | 13 | core 6、store 4、apps 2、测试夹具 1 |
-| 头文件 | 12 | core 7、store 4、`test_support.hpp` 1 |
+| C++ 源文件 | 23 | core 6、store 4、fs 9（Linux 平台）、apps 2、测试夹具/基准 2 |
+| 头文件 | 20 | core 7、store 4、fs 8、`test_support.hpp` 1 |
 | CMake 文件 | 3 | 顶层、`tests/`、警告模块 |
-| 测试文件 | 8 | 单元测试 8 个 `.cpp`，共 34 个用例 |
+| 测试文件 | 15 | 单元测试 15 个 `.cpp`，共 56 个用例 |
 | CI 配置 | 1 | GitHub Actions 三平台矩阵 + sanitizer |
 | 数据库 schema | 2 套 | 内嵌于 `migrations.cpp`（服务端/客户端 v1） |
-| 可执行产物 | 3 | `syncbox`、`syncboxd`、测试用 `syncbox_crash_writer` |
+| 可执行产物 | 4 | `syncbox`、`syncboxd`、`syncbox_crash_writer`、`syncbox_scan_benchmark` |
 
 ### M1 验证证据（2026-10-21，Linux aarch64）
 
@@ -130,15 +132,18 @@ CI 运行（run [39813188841](https://github.com/Nix-16/SyncBox/actions/runs/398
 
 > Windows 首轮失败定位过程：`StoreCrashTest` 在 cmd.exe 下因首尾引号被剥离而无法启动 helper；已通过整串加引号修复。CI 现会在失败时把测试结果输出为注解。
 
-### M3 进度证据（2026-10-22，Linux aarch64）
+### M3 验证证据（2026-10-22）
 
 | 项 | 结果 |
 |---|---|
-| 新增模块 | `fs`：IgnoreRules、扫描器、原子替换、写抑制、watcher 接口 |
-| Linux watcher | inotify（递归、重命名配对、溢出上报）已实现并有事件测试 |
-| Windows/macOS watcher | 代码已写，**尚未在 CI 编译验证** |
-| 测试 | `ctest --preset dev` 50/50；`ctest --preset asan` 50/50 |
-| 未完成 | 去抖调度、扫描差分/重命名检测、10k 扫描基准、平台 watcher 测试 |
+| 模块 | `fs`：IgnoreRules、扫描器、扫描差分/重命名检测、去抖、原子替换、写抑制、watcher 接口 |
+| watcher | inotify / ReadDirectoryChangesW / FSEvents 均实现并有运行时事件测试 |
+| 测试 | `ctest --preset dev` 56/56；`ctest --preset asan` 56/56 |
+| 三平台 CI | run [39834842424](https://github.com/Nix-16/SyncBox/actions/runs/39834842424) 7/7 job 成功 |
+| 扫描基准 | 10,000 文件、100 目录：**24 ms**（目标 < 5 s） |
+| 自写回环 | `WriteSuppression` 已实现；与引擎的集成在 M5 |
+| FI-13 | 已覆盖：无 watcher 时通过快照差分发现增/改（`ReconcileDetectsChangesMissedByWatcher`） |
+| FI-14 | `IN_Q_OVERFLOW` 已上报；真实队列溢出压力注入留待 M5 集成测试 |
 
 ---
 
@@ -204,6 +209,7 @@ CI 运行（run [39813188841](https://github.com/Nix-16/SyncBox/actions/runs/398
 | O-10 | 自签名 CA 的演示流程与文档 | M8/M9 | M8 |
 | O-11 | 客户端 token 轮换机制（SECURITY 残余风险） | M8 | M8 |
 | O-12 | M3 验收原引用 TC-100..114（需要服务端+同步引擎，M5 才具备） | ROADMAP/TEST_PLAN | M3 门禁改为 UT-FS/TC-FS；同步用例在 M5 回归（本次已修订 ROADMAP M3） |
+| O-13 | FI-14（inotify 队列溢出）未做真实压力注入 | TEST_PLAN/ROADMAP | M5 集成测试中构造事件风暴验证 |
 
 > 这些问题不影响 M0 文档作为基线成立；实现时必须在对应文档中补充决策并更新本表。
 
@@ -214,27 +220,28 @@ CI 运行（run [39813188841](https://github.com/Nix-16/SyncBox/actions/runs/398
 | 需求 | 差距 |
 |---|---|
 | 可运行的同步工具 | 仅有 CLI 骨架，无同步能力 |
-| 三平台支持 | 三平台构建与冒烟测试已由 CI 验证；平台文件监控尚未实现（M3） |
+| 三平台支持 | 构建、测试与三平台文件监控均已由 CI 验证；同步逻辑尚未实现 |
 | 服务端 | 仅有 `--version` 骨架，无 HTTP 服务 |
 | 数据库 | 两套 schema、迁移与 Repository 已实现并测试；尚未被同步引擎使用 |
 | 协议 | 仅文档，无实现 |
-| 测试 | 34 个单元测试通过；无集成/故障注入（除崩溃雏形）/性能测试 |
+| 测试 | 56 个单元测试通过；无端到端集成/完整故障注入/性能基准套件（扫描基准已有） |
 | 性能 | 无任何测量 |
 | 安全 | 无实现、无审计 |
 | 文档 | 设计文档、README、构建说明已有；演示脚本仍缺失 |
 
 ---
 
-## 7. 下一步（M3）
+## 7. 下一步（M4）
 
-M2 本机已完成；待办与 M3 任务：
+M3 已完成；M4 任务：
 
-1. 推送后检查 GitHub Actions 三平台结果；修复平台差异。
-2. `fs/`：`IFileSystemAdapter`、`PathSupport`、临时文件与原子替换。
-3. Linux inotify、Windows ReadDirectoryChangesW、macOS FSEvents 后端。
-4. Scanner：去抖、按 `path_key` 合并、`.syncbox/` 排除、指纹比对。
-5. 写抑制表与自写事件回环防护（ARCHITECTURE §4.1）。
-6. 重命名检测（inode/file index + 同批次哈希）。
-7. 对应 UT-FS-*、TC-100..105、TC-110、TC-113、TC-114、FI-13、FI-14 测试。
+1. 服务端 HTTP（Beast）：路由、连接生命周期、超时、请求体上限。
+2. 认证：enrollment token、device token 哈希、恒定时间比较、撤销检查。
+3. `OpService`：CAS、恢复阻断、路径校验、版本/日志/幂等单事务。
+4. `GET /changes`、`GET /snapshot`、`GET /entries/{file_id}`。
+5. Blob 存储：内容寻址、分块上传、整体校验、Range 下载、去重、引用计数。
+6. WebSocket Hub：认证、订阅、合并通知、心跳。
+7. 管理 CLI：创建 space、签发 enrollment token、撤销设备。
+8. 对应 PROTOCOL §7 验收与 TC-SEC-01/03/10/31/32、FI-16/17/22。
 
-**在 M3 验收前，不得开始服务端 API、网络或同步引擎实现。**
+**在 M4 验收前，不得开始客户端同步引擎实现。**
