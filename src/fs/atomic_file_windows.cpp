@@ -77,15 +77,13 @@ Result<void> sync_directory(const std::filesystem::path& path) {
 Result<void> atomic_replace(const std::filesystem::path& target,
                             const std::filesystem::path& temp) {
   if (!ReplaceFileW(target.c_str(), temp.c_str(), nullptr,
-                    REPLACEFILE_IGNORE_MERGE_ERRORS | REPLACEFILE_WRITE_THROUGH, nullptr,
-                    nullptr)) {
-    const DWORD error = GetLastError();
-    if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND) {
-      return win_error("ReplaceFileW failed");
-    }
+                    REPLACEFILE_IGNORE_MERGE_ERRORS, nullptr, nullptr)) {
+    // ReplaceFileW only works when the destination exists and is not open.
+    // MOVEFILE_REPLACE_EXISTING is atomic for paths on the same volume and
+    // also covers the "target does not exist yet" case.
     if (!MoveFileExW(temp.c_str(), target.c_str(),
                      MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-      return win_error("MoveFileExW failed");
+      return win_error("ReplaceFileW/MoveFileExW failed");
     }
   }
 

@@ -81,6 +81,8 @@ syncbox_set_warnings(syncbox_store)
 # Filesystem library: scanner, ignore rules, atomic replace, watchers.
 # ---------------------------------------------------------------------------
 set(SYNCBOX_FS_SOURCES
+  src/fs/change_detector.cpp
+  src/fs/debounce.cpp
   src/fs/ignore_rules.cpp
   src/fs/scanner.cpp
   src/fs/suppression.cpp)

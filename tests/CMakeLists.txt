@@ -14,7 +14,9 @@ add_executable(syncbox_unit_tests
   unit/fs_scanner_test.cpp
   unit/fs_atomic_test.cpp
   unit/fs_suppression_test.cpp
-  unit/fs_watch_test.cpp)
+  unit/fs_watch_test.cpp
+  unit/fs_change_test.cpp
+  unit/fs_debounce_test.cpp)
 
 target_link_libraries(syncbox_unit_tests
   PRIVATE
