@@ -24,5 +24,20 @@ add_executable(syncbox_crash_writer helpers/crash_writer.cpp)
 target_link_libraries(syncbox_crash_writer PRIVATE syncbox_store)
 syncbox_set_warnings(syncbox_crash_writer)
 
+# Keep both executables in a flat directory for every configuration. With
+# multi-config generators (Visual Studio), $<TARGET_FILE> resolves into a
+# per-config subdirectory; a config-independent path keeps the crash helper
+# discoverable from the test environment on all platforms.
+set(SYNCBOX_TEST_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}")
+foreach(target syncbox_unit_tests syncbox_crash_writer)
+  set_target_properties(${target} PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${SYNCBOX_TEST_OUTPUT_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${SYNCBOX_TEST_OUTPUT_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${SYNCBOX_TEST_OUTPUT_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${SYNCBOX_TEST_OUTPUT_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${SYNCBOX_TEST_OUTPUT_DIR}")
+endforeach()
+
 gtest_discover_tests(syncbox_unit_tests
-  PROPERTIES ENVIRONMENT "SYNCBOX_CRASH_WRITER=$<TARGET_FILE:syncbox_crash_writer>")
+  PROPERTIES ENVIRONMENT
+    "SYNCBOX_CRASH_WRITER=${SYNCBOX_TEST_OUTPUT_DIR}/syncbox_crash_writer${CMAKE_EXECUTABLE_SUFFIX}")
