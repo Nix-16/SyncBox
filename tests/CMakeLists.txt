@@ -9,12 +9,18 @@ add_executable(syncbox_unit_tests
   unit/store_database_test.cpp
   unit/store_server_test.cpp
   unit/store_client_test.cpp
-  unit/store_crash_test.cpp)
+  unit/store_crash_test.cpp
+  unit/fs_ignore_test.cpp
+  unit/fs_scanner_test.cpp
+  unit/fs_atomic_test.cpp
+  unit/fs_suppression_test.cpp
+  unit/fs_watch_test.cpp)
 
 target_link_libraries(syncbox_unit_tests
   PRIVATE
     syncbox_core
     syncbox_store
+    syncbox_fs
     GTest::gtest_main)
 
 syncbox_set_warnings(syncbox_unit_tests)

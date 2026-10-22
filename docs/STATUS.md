@@ -3,10 +3,10 @@
 | 项目 | 内容 |
 |---|---|
 | 报告日期 | 2026-10-21 |
-| 当前里程碑 | **M2 完成（三平台 CI 全绿）；M3 未开始** |
-| 代码状态 | core 模型/路径/哈希 + 两库 schema/Repository；**无同步引擎** |
+| 当前里程碑 | **M3 进行中：文件系统层已实现（Linux 本机）；平台后端待 CI** |
+| 代码状态 | core + store + fs（扫描/忽略/原子替换/抑制/Linux watcher）；**无同步引擎** |
 | 构建状态 | **可构建**：CMake 3.22 + vcpkg（storage/unicode/crypto features） |
-| 测试状态 | 34 个单元测试；CI 7/7 job 通过（三平台 Debug/Release + ASan/UBSan） |
+| 测试状态 | 50 个单元测试本地通过（Debug 与 ASan/UBSan）；Windows/macOS 待 CI |
 | 版本控制 | Git 已初始化，远端 `github.com/Nix-16/SyncBox` |
 
 > 本文档是项目真实状态的唯一依据。任何“已完成”的声明必须在此处有对应条目与证据（文件路径、命令输出、测试名称）。**当前没有任何同步功能可用。**
@@ -129,6 +129,16 @@ CI 运行（run [39631445766](https://github.com/Nix-16/SyncBox/actions/runs/396
 CI 运行（run [39813188841](https://github.com/Nix-16/SyncBox/actions/runs/39813188841)，提交 `ce19b11`）：**7/7 job 成功** —— Ubuntu Debug/Release、Windows Debug/Release、macOS-14 Debug/Release、ASan+UBSan。
 
 > Windows 首轮失败定位过程：`StoreCrashTest` 在 cmd.exe 下因首尾引号被剥离而无法启动 helper；已通过整串加引号修复。CI 现会在失败时把测试结果输出为注解。
+
+### M3 进度证据（2026-10-22，Linux aarch64）
+
+| 项 | 结果 |
+|---|---|
+| 新增模块 | `fs`：IgnoreRules、扫描器、原子替换、写抑制、watcher 接口 |
+| Linux watcher | inotify（递归、重命名配对、溢出上报）已实现并有事件测试 |
+| Windows/macOS watcher | 代码已写，**尚未在 CI 编译验证** |
+| 测试 | `ctest --preset dev` 50/50；`ctest --preset asan` 50/50 |
+| 未完成 | 去抖调度、扫描差分/重命名检测、10k 扫描基准、平台 watcher 测试 |
 
 ---
 

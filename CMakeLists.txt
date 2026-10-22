@@ -78,6 +78,51 @@ target_link_libraries(syncbox_store
 syncbox_set_warnings(syncbox_store)
 
 # ---------------------------------------------------------------------------
+# Filesystem library: scanner, ignore rules, atomic replace, watchers.
+# ---------------------------------------------------------------------------
+set(SYNCBOX_FS_SOURCES
+  src/fs/ignore_rules.cpp
+  src/fs/scanner.cpp
+  src/fs/suppression.cpp)
+
+if(WIN32)
+  list(APPEND SYNCBOX_FS_SOURCES
+    src/fs/atomic_file_windows.cpp
+    src/fs/file_identity_windows.cpp
+    src/fs/platform_windows.cpp
+    src/fs/watcher_windows.cpp)
+elseif(APPLE)
+  list(APPEND SYNCBOX_FS_SOURCES
+    src/fs/atomic_file_posix.cpp
+    src/fs/file_identity_posix.cpp
+    src/fs/platform_macos.cpp
+    src/fs/watcher_macos.cpp)
+else()
+  list(APPEND SYNCBOX_FS_SOURCES
+    src/fs/atomic_file_posix.cpp
+    src/fs/file_identity_posix.cpp
+    src/fs/platform_linux.cpp
+    src/fs/watcher_linux.cpp)
+endif()
+
+add_library(syncbox_fs STATIC ${SYNCBOX_FS_SOURCES})
+
+target_include_directories(syncbox_fs
+  PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+target_link_libraries(syncbox_fs
+  PUBLIC syncbox_core)
+
+if(APPLE)
+  target_link_libraries(syncbox_fs PRIVATE
+    "-framework CoreServices"
+    "-framework CoreFoundation")
+endif()
+
+syncbox_set_warnings(syncbox_fs)
+
+# ---------------------------------------------------------------------------
 # Executables
 # ---------------------------------------------------------------------------
 add_executable(syncbox apps/syncbox/main.cpp)
