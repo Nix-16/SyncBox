@@ -128,6 +128,8 @@ M9 性能、跨平台验收与交付
 
 ## 3. M2 —— 核心模型与数据库层
 
+> 状态：**Linux 本机已完成（2026-10-22）**；34/34 单元测试通过，ASan/UBSan 通过；三平台 CI 待运行。
+
 ### 目标
 版本模型、路径规则、哈希、两套 schema、迁移与 Repository 就绪，并有单元测试。
 
@@ -142,10 +144,10 @@ M9 性能、跨平台验收与交付
 8. 不变量测试：DB-1..DB-8。
 
 ### 验收
-- [ ] UT-CORE-*、UT-DB-* 全绿。
-- [ ] 两库空库迁移 + 重复迁移幂等。
-- [ ] 唯一索引能拒绝大小写冲突。
-- [ ] 事务崩溃注入（FI-16 雏形）后 `integrity_check` 通过。
+- [x] UT-CORE-*、UT-DB-* 全绿（34/34，Linux Debug 与 ASan/UBSan）。
+- [x] 两库空库迁移 + 重复迁移幂等。
+- [x] 唯一索引能拒绝大小写冲突（`ServerStoreTest.LivePathKeyIsUniqueAndTombstoneReleasesIt`）。
+- [x] 事务崩溃注入（FI-16 雏形）后 `integrity_check` 通过（`StoreCrashTest`）。
 
 ### 交付物
 `libsyncbox_core`、`libsyncbox_store`、schema 与测试。

@@ -26,14 +26,20 @@ endif()
 
 find_package(Threads REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
+find_package(OpenSSL REQUIRED)
+find_package(utf8proc CONFIG REQUIRED)
+find_package(unofficial-sqlite3 CONFIG REQUIRED)
 
 # ---------------------------------------------------------------------------
-# Core library: version, error model, result type.
-# Business modules (proto/store/fs/net/client/server) are added in M2-M5.
+# Core library: version model, path rules, hashing, error model.
 # ---------------------------------------------------------------------------
 add_library(syncbox_core STATIC
   src/core/error.cpp
-  src/core/version.cpp)
+  src/core/hash.cpp
+  src/core/path.cpp
+  src/core/uuid.cpp
+  src/core/version.cpp
+  src/core/version_model.cpp)
 
 target_include_directories(syncbox_core
   PUBLIC
@@ -43,10 +49,33 @@ target_compile_definitions(syncbox_core
   PRIVATE SYNCBOX_VERSION="${PROJECT_VERSION}")
 
 target_link_libraries(syncbox_core
-  PUBLIC spdlog::spdlog
+  PUBLIC
+    spdlog::spdlog
+    OpenSSL::Crypto
+    utf8proc::utf8proc
   PRIVATE Threads::Threads)
 
 syncbox_set_warnings(syncbox_core)
+
+# ---------------------------------------------------------------------------
+# Storage library: SQLite wrapper, migrations, repositories.
+# ---------------------------------------------------------------------------
+add_library(syncbox_store STATIC
+  src/store/client_store.cpp
+  src/store/database.cpp
+  src/store/migrations.cpp
+  src/store/server_store.cpp)
+
+target_include_directories(syncbox_store
+  PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+target_link_libraries(syncbox_store
+  PUBLIC
+    syncbox_core
+    unofficial::sqlite3::sqlite3)
+
+syncbox_set_warnings(syncbox_store)
 
 # ---------------------------------------------------------------------------
 # Executables

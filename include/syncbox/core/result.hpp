@@ -2,6 +2,7 @@
 
 #include <syncbox/core/error.hpp>
 
+#include <optional>
 #include <utility>
 #include <variant>
 
@@ -30,6 +31,23 @@ class [[nodiscard]] Result {
 
  private:
   std::variant<T, Error> storage_;
+};
+
+// Void specialization: success carries no value.
+template <>
+class [[nodiscard]] Result<void> {
+ public:
+  Result() = default;
+  Result(Error error) : error_(std::move(error)) {}  // NOLINT(google-explicit-constructor)
+
+  [[nodiscard]] bool has_value() const noexcept { return !error_.has_value(); }
+  explicit operator bool() const noexcept { return has_value(); }
+
+  Error& error() & { return *error_; }
+  const Error& error() const& { return *error_; }
+
+ private:
+  std::optional<Error> error_;
 };
 
 }  // namespace syncbox

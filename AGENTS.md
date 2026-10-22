@@ -15,10 +15,10 @@ SyncBox：C++17 跨平台（Windows/Linux/macOS）双向文件同步工具，中
 
 | 项 | 状态 |
 |---|---|
-| 当前里程碑 | **M1 完成（三平台 CI 全绿）；M2 未开始** |
-| 业务代码 | **0 行**（仅有版本/错误/Result 骨架） |
-| 构建系统 | CMake 3.22 + vcpkg manifest（可用） |
-| 测试 | 4 个冒烟测试；Linux Debug 与 ASan/UBSan 通过 |
+| 当前里程碑 | **M2 本机完成（Linux）；三平台 CI 待运行；M3 未开始** |
+| 业务代码 | core 模型/路径/哈希 + 两库 schema/Repository；同步引擎未实现 |
+| 构建系统 | CMake 3.22 + vcpkg manifest（storage/unicode/crypto 已启用） |
+| 测试 | 34 个单元测试；Linux Debug 与 ASan/UBSan 通过 |
 | Git 仓库 | 已初始化（`main`），远端 `origin` = `github.com/Nix-16/SyncBox` |
 
 完整状态见 [docs/STATUS.md](docs/STATUS.md)。**在 M1 完成前，不要声称项目“可构建”“可运行”“测试通过”。**
@@ -157,8 +157,8 @@ ctest --preset dev --output-on-failure
 - `SYNCBOX_SANITIZE=ON`（`asan` preset）仅在 GCC/Clang 下可用。
 - 新增源文件后必须重新运行配置步骤。
 - 修改 `vcpkg.json` 后必须提交新的 `builtin-baseline` 并说明原因。
-- 依赖按里程碑通过 vcpkg feature 启用（M1 默认仅 `spdlog`、`gtest`）；启用示例：
-  `cmake --preset dev -DVCPKG_MANIFEST_FEATURES="storage;unicode"`。
+- 依赖按里程碑通过 vcpkg feature 启用（当前 `dev`/`release`/`asan` preset 已启用
+  `storage;unicode;crypto`）；`networking`/`json` 在 M4 启用。
 
 要求：
 

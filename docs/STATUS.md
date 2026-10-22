@@ -3,10 +3,10 @@
 | 项目 | 内容 |
 |---|---|
 | 报告日期 | 2026-10-21 |
-| 当前里程碑 | **M1 完成（Linux/Windows/macOS CI 全绿）；M2 未开始** |
-| 代码状态 | 仅工程骨架（版本/错误/Result），**无业务逻辑** |
-| 构建状态 | **可构建**：CMake 3.22 + vcpkg，三平台 CI 已验证 |
-| 测试状态 | 4 个单元测试；CI 7/7 job 通过（三平台 Debug/Release + ASan/UBSan） |
+| 当前里程碑 | **M2 本机完成（Linux）；三平台 CI 待运行；M3 未开始** |
+| 代码状态 | core 模型/路径/哈希 + 两库 schema/Repository；**无同步引擎** |
+| 构建状态 | **可构建**：CMake 3.22 + vcpkg（storage/unicode/crypto features） |
+| 测试状态 | 34 个单元测试通过（Linux Debug 与 ASan/UBSan） |
 | 版本控制 | Git 已初始化，远端 `github.com/Nix-16/SyncBox` |
 
 > 本文档是项目真实状态的唯一依据。任何“已完成”的声明必须在此处有对应条目与证据（文件路径、命令输出、测试名称）。**当前没有任何同步功能可用。**
@@ -37,13 +37,17 @@ M0 交付后的内容：
 | `CMakePresets.json` | `dev` / `release` / `asan` 预设 |
 | `vcpkg.json` | vcpkg manifest，baseline 锁定 |
 | `cmake/CompilerWarnings.cmake` | 编译警告策略 |
-| `include/syncbox/core/` | `version.hpp`、`error.hpp`、`result.hpp` |
-| `src/core/` | `version.cpp`、`error.cpp` |
+| `include/syncbox/core/` | `version`、`error`、`result`、`uuid`、`version_model`、`path`、`hash` |
+| `src/core/` | 上述 core 模块实现 |
+| `include/syncbox/store/` | `database`、`migrations`、`server_store`、`client_store` |
+| `src/store/` | SQLite 封装、两库迁移、服务端/客户端 Repository |
 | `apps/syncbox/`、`apps/syncboxd/` | CLI 骨架（`--version`/`--help`） |
-| `tests/unit/` | GoogleTest 冒烟测试 |
-| `.github/workflows/ci.yml` | 三平台 CI（尚未在 GitHub 上运行） |
+| `tests/unit/` | 34 个 GoogleTest 用例（core + store + 崩溃注入） |
+| `tests/helpers/` | `crash_writer`（FI-16 子进程夹具） |
+| `.clang-format` | 代码格式化规则（M1 遗留项，M2 补上） |
+| `.github/workflows/ci.yml` | 三平台 CI（M1 时 7/7 通过；M2 变更尚未运行） |
 
-**仍然不存在**：`proto/`、`store/`、`fs/`、`net/`、`client/`、`server/` 模块，Qt GUI，数据库 schema 文件，任何同步业务代码。
+**仍然不存在**：`proto/`、`fs/`、`net/`、`client/`、`server/` 模块，Qt GUI，任何同步业务代码。
 
 Git 仓库已初始化（`main` 分支），远端 `origin` 指向 `github.com/Nix-16/SyncBox`。
 
@@ -65,9 +69,9 @@ Git 仓库已初始化（`main` 分支），远端 `origin` 指向 `github.com/N
 | FR-02 | 中心服务器通信 | ✅ ARCHITECTURE/PROTOCOL | ❌ | ❌ | 未实现 |
 | FR-03 | 文件监控与索引 | ✅ ARCHITECTURE §4.1 | ❌ | ❌ | 未实现 |
 | FR-04 | 双向同步（增改删重命名） | ✅ CONFLICTS | ❌ | ❌ | 未实现 |
-| FR-05 | 元数据持久化 | ✅ DATABASE | ❌ | ❌ | 未实现 |
-| FR-06 | 版本管理与幂等 | ✅ CONFLICTS/PROTOCOL | ❌ | ❌ | 未实现 |
-| FR-07 | 变更日志与游标 | ✅ DATABASE/PROTOCOL | ❌ | ❌ | 未实现 |
+| FR-05 | 元数据持久化 | ✅ DATABASE | ⚠️ schema + Repository | ✅ UT-DB | 部分实现（无同步引擎使用） |
+| FR-06 | 版本管理与幂等 | ✅ CONFLICTS/PROTOCOL | ⚠️ 模型与约束 | ✅ 模型/幂等约束测试 | 部分实现（服务端 CAS 未实现） |
+| FR-07 | 变更日志与游标 | ✅ DATABASE/PROTOCOL | ⚠️ 日志表与游标 | ✅ seq/游标测试 | 部分实现（拉取端点未实现） |
 | FR-08 | 冲突检测与副本 | ✅ CONFLICTS | ❌ | ❌ | 未实现 |
 | FR-09 | 分块、校验、续传、重试 | ✅ PROTOCOL §3.9 | ❌ | ❌ | 未实现 |
 | FR-10 | 持久化队列与恢复 | ✅ DATABASE §3.2/ARCH §3.3 | ❌ | ❌ | 未实现 |
@@ -75,8 +79,8 @@ Git 仓库已初始化（`main` 分支），远端 `origin` 指向 `github.com/N
 | FR-12 | 三平台文件系统适配 | ✅ ARCHITECTURE §2 | ❌ | ❌ | 未实现 |
 | FR-13 | Qt 桌面界面 | ✅ ROADMAP M7（概要） | ❌ | ❌ | 未实现 |
 | FR-14 | 认证/TLS/路径安全/撤销 | ✅ SECURITY | ❌ | ❌ | 未实现 |
-| FR-15 | 测试体系 | ✅ TEST_PLAN | ❌ | ❌ | 未实现 |
-| FR-16 | 构建/文档/演示 | ✅ 部分（M0 文档） | ⚠️ 仅构建骨架 | ✅ 冒烟 4 项 | 部分实现（工程骨架，无业务） |
+| FR-15 | 测试体系 | ✅ TEST_PLAN | ⚠️ 34 个单元测试 | ✅ 单元层 | 部分实现（无集成/性能测试） |
+| FR-16 | 构建/文档/演示 | ✅ 部分（M0 文档） | ⚠️ 构建骨架 | ✅ 34 项 | 部分实现（无演示） |
 
 **没有任何同步功能可以声称“可用”。**
 
@@ -86,13 +90,13 @@ Git 仓库已初始化（`main` 分支），远端 `origin` 指向 `github.com/N
 
 | 类别 | 数量 | 说明 |
 |---|---|---|
-| C++ 源文件 | 4 | `version.cpp`、`error.cpp`、两个 `main.cpp` |
-| 头文件 | 3 | `version.hpp`、`error.hpp`、`result.hpp` |
+| C++ 源文件 | 13 | core 6、store 4、apps 2、测试夹具 1 |
+| 头文件 | 12 | core 7、store 4、`test_support.hpp` 1 |
 | CMake 文件 | 3 | 顶层、`tests/`、警告模块 |
-| 测试文件 | 1 | `core_smoke_test.cpp`（4 个用例） |
+| 测试文件 | 8 | 单元测试 8 个 `.cpp`，共 34 个用例 |
 | CI 配置 | 1 | GitHub Actions 三平台矩阵 + sanitizer |
-| 数据库 schema 文件 | 0（仅文档中的 DDL） | — |
-| 可执行产物 | 2 | `syncbox`、`syncboxd`（仅 `--version`/`--help`） |
+| 数据库 schema | 2 套 | 内嵌于 `migrations.cpp`（服务端/客户端 v1） |
+| 可执行产物 | 3 | `syncbox`、`syncboxd`、测试用 `syncbox_crash_writer` |
 
 ### M1 验证证据（2026-10-21，Linux aarch64）
 
@@ -110,18 +114,30 @@ CI 运行（run [39631445766](https://github.com/Nix-16/SyncBox/actions/runs/396
 
 > 首次运行（run `39630110288`）中 `macos-13` 排队 9 分钟未分配 runner，已切换为 `macos-14`；该旧 run 仍显示 queued，已被新提交取代。
 
+### M2 验证证据（2026-10-22，Linux aarch64）
+
+| 项 | 实际命令 | 实际结果 |
+|---|---|---|
+| 配置 | `VCPKG_FORCE_SYSTEM_BINARIES=1 VCPKG_ROOT=~/vcpkg cmake --preset dev` | 成功；vcpkg 安装 openssl 3.6.2、sqlite3 3.53.1、utf8proc 2.11.3 |
+| 编译 | `cmake --build --preset dev` | 成功 |
+| 测试 | `ctest --preset dev --output-on-failure` | **34/34 通过** |
+| ASan/UBSan | `cmake --preset asan && cmake --build --preset asan && ctest --preset asan` | **34/34 通过** |
+| 崩溃注入 | `StoreCrashTest.UncommittedTransactionDoesNotSurviveProcessDeath` | 通过（子进程事务内 `_Exit`，重启后行未提交、`integrity_check=ok`） |
+
+> 环境说明：本机访问 GitHub 被限速/中断，OpenSSL 与 utf8proc 源码通过镜像下载后放入 vcpkg 下载缓存，由 vcpkg 校验哈希后使用。该操作不改变依赖版本与 manifest。
+
 ---
 
 ## 4. 已知风险
 
 | 编号 | 风险 | 影响 | 当前处置 |
 |---|---|---|---|
-| R-01 | 仅有工程骨架，业务未实现 | 无法演示同步、无法验证设计 | M2 起按里程碑实现 |
+| R-01 | 仅有 core/store，同步功能未实现 | 无法演示同步、无法验证设计 | M3 起按里程碑实现 |
 | R-02 | CI 无 vcpkg 二进制缓存 | 每次构建重复安装依赖，耗时较长 | 后续加 `actions/cache` 或 GHCR 缓存 |
-| R-03 | 依赖获取方式未定 | M1 构建可能受阻 | M1 首日决策（FetchContent vs vcpkg） |
+| R-03 | 本机访问 GitHub 受限速/中断 | 依赖安装可能失败 | 预置 vcpkg 下载缓存；CI 网络正常 |
 | R-04 | 三平台监控语义差异 | 事件丢失/重复 | 设计已含核对兜底；M3 专项测试 |
 | R-05 | 冲突策略复杂 | 实现偏离规范 | 以 CONFLICTS §9 示例作为回归用例 |
-| R-06 | 无 CI | 无法证明“三平台可用” | M1 建立矩阵 |
+| R-06 | M2 变更尚未在 CI 运行 | 三平台兼容性未验证 | 推送后观察 Actions 结果 |
 | R-07 | 文档量大 | 可能与实现漂移 | AGENTS.md 强制同步更新 + M9 审计 |
 | R-08 | SQLite 单写者 | 服务端吞吐上限 | 短事务；M9 基准验证 |
 | R-09 | 无 E2EE | 服务端可读明文 | 已在 PRD/SECURITY 明示，v2 议题 |
@@ -185,25 +201,25 @@ CI 运行（run [39631445766](https://github.com/Nix-16/SyncBox/actions/runs/396
 | 可运行的同步工具 | 仅有 CLI 骨架，无同步能力 |
 | 三平台支持 | 三平台构建与冒烟测试已由 CI 验证；平台文件监控尚未实现（M3） |
 | 服务端 | 仅有 `--version` 骨架，无 HTTP 服务 |
-| 数据库 | 仅文档 DDL，无 schema 文件、无迁移代码 |
+| 数据库 | 两套 schema、迁移与 Repository 已实现并测试；尚未被同步引擎使用 |
 | 协议 | 仅文档，无实现 |
-| 测试 | 4 个冒烟测试，CI 7/7 通过；业务功能测试尚未编写 |
+| 测试 | 34 个单元测试通过；无集成/故障注入（除崩溃雏形）/性能测试 |
 | 性能 | 无任何测量 |
 | 安全 | 无实现、无审计 |
 | 文档 | 设计文档、README、构建说明已有；演示脚本仍缺失 |
 
 ---
 
-## 7. 下一步（M2）
+## 7. 下一步（M3）
 
-M1 本机已完成；待办与 M2 任务：
+M2 本机已完成；待办与 M3 任务：
 
-1. 推送后检查 GitHub Actions 首次三平台结果；修复平台差异。
-2. 启用 `storage`、`unicode` feature（sqlite3、utf8proc）。
-3. `core/version_model`：`FileId/OpId/Revision/Seq/ContentHash/OpKind`。
-4. `core/path`：NFC、casefold、保留名、长度校验（对应 UT-CORE-01..08）。
-5. `core/hash`：OpenSSL EVP 流式 SHA-256（对应 UT-CORE-07）。
-6. 服务端与客户端 schema、迁移、Repository（对应 UT-DB-01..06）。
-7. 崩溃与事务不变量测试（FI-16 雏形）。
+1. 推送后检查 GitHub Actions 三平台结果；修复平台差异。
+2. `fs/`：`IFileSystemAdapter`、`PathSupport`、临时文件与原子替换。
+3. Linux inotify、Windows ReadDirectoryChangesW、macOS FSEvents 后端。
+4. Scanner：去抖、按 `path_key` 合并、`.syncbox/` 排除、指纹比对。
+5. 写抑制表与自写事件回环防护（ARCHITECTURE §4.1）。
+6. 重命名检测（inode/file index + 同批次哈希）。
+7. 对应 UT-FS-*、TC-100..105、TC-110、TC-113、TC-114、FI-13、FI-14 测试。
 
-**在 M2 验收前，不得开始文件监控、网络或同步引擎实现。**
+**在 M3 验收前，不得开始服务端 API、网络或同步引擎实现。**
