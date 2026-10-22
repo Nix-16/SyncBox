@@ -9,6 +9,8 @@
 #include <windows.h>
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -57,7 +59,14 @@ class WindowsWatcher final : public Watcher {
 
   ~WindowsWatcher() override { stop(); }
 
-  void start() { thread_ = std::thread([this] { run(); }); }
+  void start() {
+    thread_ = std::thread([this] { run(); });
+    // Do not return until ReadDirectoryChangesW is armed, otherwise a write
+    // racing with start_watcher() can be missed.
+    std::unique_lock<std::mutex> lock(armed_mutex_);
+    armed_condition_.wait_for(lock, std::chrono::seconds(1),
+                              [this] { return armed_ || stopping_.load(); });
+  }
 
   void stop() override {
     bool expected = false;
@@ -94,6 +103,11 @@ class WindowsWatcher final : public Watcher {
         }
         return;
       }
+      {
+        std::lock_guard<std::mutex> lock(armed_mutex_);
+        armed_ = true;
+      }
+      armed_condition_.notify_all();
 
       while (!stopping_.load()) {
         const DWORD wait = ::WaitForSingleObject(overlapped_.hEvent, 200);
@@ -164,6 +178,9 @@ class WindowsWatcher final : public Watcher {
   OVERLAPPED overlapped_{};
   std::atomic<bool> stopping_{false};
   std::thread thread_;
+  std::mutex armed_mutex_;
+  std::condition_variable armed_condition_;
+  bool armed_ = false;
 };
 
 }  // namespace

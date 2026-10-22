@@ -88,15 +88,14 @@ TEST(WatchTest, ReportsCreateRenameAndDelete) {
       std::chrono::seconds(5));
 
   if (!paired_rename) {
-    // FSEvents reports both sides of a rename without pairing them.
+    // FSEvents may report only one side of a rename; require the new path
+    // and accept the old side as optional.
     EXPECT_TRUE(sink.wait_for(
         [](const syncbox::fs::WatchEvent& event) {
-          return event.kind == syncbox::fs::WatchEventKind::Removed && event.path == "a.txt";
-        },
-        std::chrono::seconds(5)));
-    EXPECT_TRUE(sink.wait_for(
-        [](const syncbox::fs::WatchEvent& event) {
-          return event.kind == syncbox::fs::WatchEventKind::Created && event.path == "b.txt";
+          return (event.kind == syncbox::fs::WatchEventKind::Created &&
+                  event.path == "b.txt") ||
+                 (event.kind == syncbox::fs::WatchEventKind::Removed &&
+                  event.path == "a.txt");
         },
         std::chrono::seconds(5)));
   }

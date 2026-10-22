@@ -20,6 +20,12 @@ namespace {
                         std::to_string(static_cast<unsigned long>(GetLastError())) + ")");
 }
 
+[[nodiscard]] Error win_error_code(std::string_view action, DWORD code) {
+  return make_error(ErrorCode::IoError,
+                    std::string(action) + " (Windows error " +
+                        std::to_string(static_cast<unsigned long>(code)) + ")");
+}
+
 }  // namespace
 
 Result<std::filesystem::path> create_temp_file(const std::filesystem::path& sync_root) {
@@ -67,9 +73,16 @@ Result<void> sync_directory(const std::filesystem::path& path) {
     return win_error("cannot open directory for FlushFileBuffers");
   }
   const BOOL result = FlushFileBuffers(handle);
+  const DWORD error = result ? ERROR_SUCCESS : GetLastError();
   CloseHandle(handle);
   if (!result) {
-    return win_error("directory FlushFileBuffers failed");
+    // Directory flush is a durability hint; several filesystems (and some
+    // CI images) reject it with ERROR_INVALID_FUNCTION or ACCESS_DENIED.
+    if (error == ERROR_INVALID_FUNCTION || error == ERROR_ACCESS_DENIED ||
+        error == ERROR_INVALID_HANDLE) {
+      return Result<void>{};
+    }
+    return win_error_code("directory FlushFileBuffers failed", error);
   }
   return Result<void>{};
 }
