@@ -40,6 +40,19 @@ jobs:
       - name: Test
         run: ctest --test-dir build -C ${{ matrix.build_type }} --output-on-failure
 
+      - name: Report failing tests
+        if: failure()
+        shell: bash
+        run: |
+          log=build/Testing/Temporary/LastTest.log
+          if [ -f "$log" ]; then
+            grep -aE "Test #|Failed|FAILED|Exception|what\\(\\)" "$log" | tail -80 | while IFS= read -r line; do
+              echo "::error title=CTest::$line"
+            done
+          else
+            echo "::error title=CTest::LastTest.log not found"
+          fi
+
   sanitizers:
     name: ubuntu-22.04 / ASan+UBSan
     runs-on: ubuntu-22.04
@@ -67,3 +80,16 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+      - name: Report failing tests
+        if: failure()
+        shell: bash
+        run: |
+          log=build/Testing/Temporary/LastTest.log
+          if [ -f "$log" ]; then
+            grep -aE "Test #|Failed|FAILED|Exception|what\\(\\)" "$log" | tail -80 | while IFS= read -r line; do
+              echo "::error title=CTest::$line"
+            done
+          else
+            echo "::error title=CTest::LastTest.log not found"
+          fi
