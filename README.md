@@ -13,7 +13,7 @@ C++17 跨平台双向文件同步工具（Windows / Linux / macOS），中心服
   两套 SQLite schema/迁移、Repository、文件扫描/差分、原子替换、
   inotify / ReadDirectoryChangesW / FSEvents 监控、服务端 HTTP/认证/提交/变更流/Blob/WebSocket。
 - `syncboxd` 可启动 HTTP 服务并提供设备注册/提交/变更流；`syncbox` 仍为骨架。
-- 61 个测试通过（含 HTTP 集成与进程崩溃注入）。
+- 67 个测试通过（含 HTTP 集成与进程崩溃注入）。
 - 真实进度以 [docs/STATUS.md](docs/STATUS.md) 为准，本文档不重复其结论。
 
 ## 文档

@@ -435,3 +435,69 @@ TEST_F(ServerApiTest, WebSocketReceivesChangeHint) {
   EXPECT_EQ(change["space_id"].get<std::string>(), space_id_);
   EXPECT_GE(change["seq"].get<std::int64_t>(), 1);
 }
+
+TEST_F(ServerApiTest, RejectsPathTraversalAtApi) {
+  const std::string token = enroll_device();
+  const auto hash = make_blob("path-check");
+  const std::vector<std::string> invalid_paths = {
+      "../etc/passwd", "/absolute/path", "a\\b", "CON", "a//b", "dir/../file", "file."};
+  for (const auto& path : invalid_paths) {
+    nlohmann::json create{{"op_id", syncbox::generate_uuid_v7()},
+                          {"kind", "create"},
+                          {"file_id", nullptr},
+                          {"base_revision", 0},
+                          {"path", path},
+                          {"content_hash", hash.to_hex()},
+                          {"size", 10},
+                          {"mtime_ms", 1},
+                          {"client_seq", 0},
+                          {"conflict", false}};
+    auto response = http_call(server_->port(), http::verb::post,
+                              "/v1/spaces/" + space_id_ + "/ops", create.dump(), token);
+    EXPECT_EQ(response.status, 422) << path << " -> " << response.body;
+    EXPECT_EQ(nlohmann::json::parse(response.body)["error"]["code"].get<std::string>(),
+              "PATH_INVALID")
+        << path;
+  }
+}
+
+TEST_F(ServerApiTest, RejectsCorruptChunk) {
+  const std::string token = enroll_device();
+  const std::string content = "abc";
+  auto content_hash = syncbox::sha256(content);
+  ASSERT_TRUE(content_hash);
+  const std::string content_hex = content_hash.value().to_hex();
+  auto chunk_hash = syncbox::sha256(content);
+  ASSERT_TRUE(chunk_hash);
+
+  nlohmann::json init{{"content_hash", content_hex},
+                      {"size", 3},
+                      {"chunk_size", 3},
+                      {"chunk_hashes", std::vector<std::string>{chunk_hash.value().to_hex()}}};
+  auto started = http_call(server_->port(), http::verb::post, "/v1/blobs", init.dump(), token);
+  ASSERT_EQ(started.status, 201) << started.body;
+
+  auto corrupt_hash = syncbox::sha256("abd");
+  ASSERT_TRUE(corrupt_hash);
+  auto corrupt = http_call(
+      server_->port(), http::verb::put, "/v1/blobs/" + content_hex + "/chunks/0", "abd", token,
+      {{"X-Chunk-SHA256", corrupt_hash.value().to_hex()},
+       {"Content-Type", "application/octet-stream"}});
+  EXPECT_EQ(corrupt.status, 422) << corrupt.body;
+  EXPECT_EQ(nlohmann::json::parse(corrupt.body)["error"]["code"].get<std::string>(),
+            "CHUNK_HASH_MISMATCH");
+
+  auto status = http_call(server_->port(), http::verb::get,
+                          "/v1/blobs/" + content_hex + "/status", {}, token);
+  ASSERT_EQ(status.status, 200);
+  EXPECT_EQ(nlohmann::json::parse(status.body)["missing_chunks"].size(), 1U);
+
+  auto uploaded = http_call(
+      server_->port(), http::verb::put, "/v1/blobs/" + content_hex + "/chunks/0", content, token,
+      {{"X-Chunk-SHA256", chunk_hash.value().to_hex()},
+       {"Content-Type", "application/octet-stream"}});
+  ASSERT_EQ(uploaded.status, 204);
+  auto completed = http_call(server_->port(), http::verb::post,
+                             "/v1/blobs/" + content_hex + "/complete", {}, token);
+  EXPECT_EQ(completed.status, 200) << completed.body;
+}
