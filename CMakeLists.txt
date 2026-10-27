@@ -29,6 +29,8 @@ find_package(spdlog CONFIG REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(utf8proc CONFIG REQUIRED)
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
+find_package(Boost CONFIG REQUIRED COMPONENTS asio beast system)
+find_package(nlohmann_json CONFIG REQUIRED)
 
 # ---------------------------------------------------------------------------
 # Core library: version model, path rules, hashing, error model.
@@ -37,6 +39,7 @@ add_library(syncbox_core STATIC
   src/core/error.cpp
   src/core/hash.cpp
   src/core/path.cpp
+  src/core/token.cpp
   src/core/uuid.cpp
   src/core/version.cpp
   src/core/version_model.cpp)
@@ -125,6 +128,46 @@ endif()
 syncbox_set_warnings(syncbox_fs)
 
 # ---------------------------------------------------------------------------
+# Networking: asynchronous HTTP server (Boost.Beast).
+# ---------------------------------------------------------------------------
+add_library(syncbox_net STATIC
+  src/net/http_server.cpp)
+
+target_include_directories(syncbox_net
+  PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+target_link_libraries(syncbox_net
+  PUBLIC
+    syncbox_core
+    Boost::asio
+    Boost::beast
+    Boost::system
+  PRIVATE Threads::Threads)
+
+syncbox_set_warnings(syncbox_net)
+
+# ---------------------------------------------------------------------------
+# Server services: auth, operations, HTTP routing.
+# ---------------------------------------------------------------------------
+add_library(syncbox_server STATIC
+  src/server/api.cpp
+  src/server/auth_service.cpp
+  src/server/op_service.cpp)
+
+target_include_directories(syncbox_server
+  PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+target_link_libraries(syncbox_server
+  PUBLIC
+    syncbox_store
+    syncbox_net
+    nlohmann_json::nlohmann_json)
+
+syncbox_set_warnings(syncbox_server)
+
+# ---------------------------------------------------------------------------
 # Executables
 # ---------------------------------------------------------------------------
 add_executable(syncbox apps/syncbox/main.cpp)
@@ -132,7 +175,7 @@ target_link_libraries(syncbox PRIVATE syncbox_core)
 syncbox_set_warnings(syncbox)
 
 add_executable(syncboxd apps/syncboxd/main.cpp)
-target_link_libraries(syncboxd PRIVATE syncbox_core)
+target_link_libraries(syncboxd PRIVATE syncbox_server syncbox_store syncbox_core)
 syncbox_set_warnings(syncboxd)
 
 # ---------------------------------------------------------------------------

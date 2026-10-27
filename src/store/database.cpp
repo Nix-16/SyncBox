@@ -94,6 +94,10 @@ Result<std::int64_t> Database::last_insert_rowid() const {
   return sqlite3_last_insert_rowid(db_);
 }
 
+int Database::changes() const {
+  return db_ == nullptr ? 0 : sqlite3_changes(db_);
+}
+
 Result<void> Database::set_user_version(int version) {
   return execute("PRAGMA user_version=" + std::to_string(version) + ";");
 }
@@ -224,6 +228,15 @@ std::int64_t Statement::column_int64(int column) const {
 
 bool Statement::column_is_null(int column) const {
   return sqlite3_column_type(stmt_, column) == SQLITE_NULL;
+}
+
+std::vector<std::uint8_t> Statement::column_blob(int column) const {
+  const auto* data = static_cast<const std::uint8_t*>(sqlite3_column_blob(stmt_, column));
+  if (data == nullptr) {
+    return {};
+  }
+  const int size = sqlite3_column_bytes(stmt_, column);
+  return std::vector<std::uint8_t>(data, data + size);
 }
 
 Result<Transaction> Transaction::begin(Database& db, bool immediate) {

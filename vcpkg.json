@@ -12,7 +12,14 @@
     "networking": {
       "description": "Boost.Asio/Beast networking (M4)",
       "dependencies": [
-        "boost-asio"
+        {
+          "name": "boost-asio",
+          "default-features": false
+        },
+        {
+          "name": "boost-beast",
+          "default-features": false
+        }
       ]
     },
     "storage": {

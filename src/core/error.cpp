@@ -30,6 +30,7 @@ std::string_view to_string(ErrorCode code) noexcept {
     case ErrorCode::RateLimited: return "RATE_LIMITED";
     case ErrorCode::Internal: return "INTERNAL";
     case ErrorCode::Unavailable: return "UNAVAILABLE";
+    case ErrorCode::NotFound: return "NOT_FOUND";
     case ErrorCode::IoError: return "IO_ERROR";
     case ErrorCode::DatabaseError: return "DATABASE_ERROR";
     case ErrorCode::Cancelled: return "CANCELLED";
@@ -64,6 +65,7 @@ int http_status(ErrorCode code) noexcept {
     case ErrorCode::RateLimited: return 429;
     case ErrorCode::Internal: return 500;
     case ErrorCode::Unavailable: return 503;
+    case ErrorCode::NotFound: return 404;
     case ErrorCode::IoError:
     case ErrorCode::DatabaseError:
     case ErrorCode::Cancelled:

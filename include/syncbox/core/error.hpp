@@ -33,6 +33,7 @@ enum class ErrorCode {
   RateLimited,
   Internal,
   Unavailable,
+  NotFound,
 
   // Local errors (client-side only)
   IoError,

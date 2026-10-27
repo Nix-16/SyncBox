@@ -31,7 +31,7 @@ jobs:
           cmake -S . -B build
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
           -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake
-          -DVCPKG_MANIFEST_FEATURES="storage;unicode;crypto"
+          -DVCPKG_MANIFEST_FEATURES="storage;unicode;crypto;networking;json"
           -DSYNCBOX_BUILD_TESTS=ON
 
       - name: Build
@@ -72,7 +72,7 @@ jobs:
           cmake -S . -B build
           -DCMAKE_BUILD_TYPE=Debug
           -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake
-          -DVCPKG_MANIFEST_FEATURES="storage;unicode;crypto"
+          -DVCPKG_MANIFEST_FEATURES="storage;unicode;crypto;networking;json"
           -DSYNCBOX_SANITIZE=ON
 
       - name: Build

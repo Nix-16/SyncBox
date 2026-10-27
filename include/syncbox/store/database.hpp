@@ -38,6 +38,7 @@ class Database {
 
   [[nodiscard]] Result<void> execute(std::string_view sql);
   [[nodiscard]] Result<std::int64_t> last_insert_rowid() const;
+  [[nodiscard]] int changes() const;
   [[nodiscard]] Result<void> set_user_version(int version);
   [[nodiscard]] int user_version() const;
 
@@ -69,6 +70,7 @@ class Statement {
   [[nodiscard]] std::string column_text(int column) const;
   [[nodiscard]] std::int64_t column_int64(int column) const;
   [[nodiscard]] bool column_is_null(int column) const;
+  [[nodiscard]] std::vector<std::uint8_t> column_blob(int column) const;
 
  private:
   explicit Statement(sqlite3_stmt* stmt) noexcept : stmt_(stmt) {}

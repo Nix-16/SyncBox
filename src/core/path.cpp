@@ -47,10 +47,6 @@ namespace {
   return false;
 }
 
-[[nodiscard]] bool is_ascii_upper(char c) noexcept {
-  return c >= 'A' && c <= 'Z';
-}
-
 [[nodiscard]] bool is_ascii_lower(char c) noexcept {
   return c >= 'a' && c <= 'z';
 }
