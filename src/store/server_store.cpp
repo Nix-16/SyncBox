@@ -844,6 +844,38 @@ Result<void> ServerStore::insert_blob_chunk(const BlobChunkRecord& chunk) {
   return Result<void>{};
 }
 
+Result<std::optional<BlobChunkRecord>> ServerStore::find_blob_chunk(
+    std::string_view content_hash, int chunk_index) {
+  auto statement = Statement::prepare(
+      db_,
+      "SELECT content_hash,chunk_index,chunk_hash,size,received_at FROM blob_chunks "
+      "WHERE content_hash=? AND chunk_index=?;");
+  if (!statement) {
+    return statement.error();
+  }
+  auto& stmt = statement.value();
+  if (auto r = check(stmt.bind_text(1, content_hash)); !r) return r.error();
+  if (auto r = check(stmt.bind_int64(2, chunk_index)); !r) return r.error();
+
+  auto step = stmt.step();
+  if (!step) {
+    return step.error();
+  }
+  if (!step.value()) {
+    return std::optional<BlobChunkRecord>{};
+  }
+
+  BlobChunkRecord chunk;
+  chunk.content_hash = stmt.column_text(0);
+  chunk.chunk_index = static_cast<int>(stmt.column_int64(1));
+  chunk.chunk_hash = stmt.column_text(2);
+  chunk.size = stmt.column_int64(3);
+  if (!stmt.column_is_null(4)) {
+    chunk.received_at = stmt.column_int64(4);
+  }
+  return std::optional<BlobChunkRecord>{std::move(chunk)};
+}
+
 Result<void> ServerStore::mark_blob_chunk_received(std::string_view content_hash, int chunk_index,
                                                    std::int64_t received_at) {
   auto statement = Statement::prepare(
@@ -902,6 +934,24 @@ Result<void> ServerStore::mark_blob_complete(std::string_view content_hash,
     return step.error();
   }
   return Result<void>{};
+}
+
+Result<bool> ServerStore::blob_referenced_in_space(std::string_view space_id,
+                                                   std::string_view content_hash) {
+  auto statement = Statement::prepare(
+      db_,
+      "SELECT 1 FROM entries WHERE space_id=? AND content_hash=? LIMIT 1;");
+  if (!statement) {
+    return statement.error();
+  }
+  auto& stmt = statement.value();
+  if (auto r = check(stmt.bind_text(1, space_id)); !r) return r.error();
+  if (auto r = check(stmt.bind_text(2, content_hash)); !r) return r.error();
+  auto step = stmt.step();
+  if (!step) {
+    return step.error();
+  }
+  return step.value();
 }
 
 Result<void> ServerStore::increment_blob_ref(std::string_view content_hash) {

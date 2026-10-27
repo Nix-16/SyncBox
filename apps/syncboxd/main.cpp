@@ -3,6 +3,7 @@
 #include <syncbox/core/uuid.hpp>
 #include <syncbox/core/version.hpp>
 #include <syncbox/server/api.hpp>
+#include <syncbox/server/blob_store.hpp>
 #include <syncbox/server/auth_service.hpp>
 #include <syncbox/server/op_service.hpp>
 #include <syncbox/store/migrations.hpp>
@@ -29,6 +30,7 @@ struct Options {
   std::string db_path = "server.db";
   std::string listen = "127.0.0.1";
   std::uint16_t port = 8443;
+  std::string blob_root = "blobs";
 };
 
 [[nodiscard]] std::optional<std::string> next_value(int argc, char** argv, int& index) {
@@ -197,6 +199,10 @@ int run_server(int argc, char** argv) {
       } catch (const std::exception&) {
         return fail("invalid --port");
       }
+    } else if (argument == "--blob-root") {
+      auto value = next_value(argc, argv, i);
+      if (!value) return fail("--blob-root needs a value");
+      options.blob_root = *value;
     } else {
       return fail("unknown argument: " + argument);
     }
@@ -211,9 +217,15 @@ int run_server(int argc, char** argv) {
     return fail(migrated.error().message);
   }
 
+  syncbox::server::BlobStore blobs(store.value(), options.blob_root);
+  auto prepared = blobs.prepare();
+  if (!prepared) {
+    return fail(prepared.error().message);
+  }
+
   syncbox::server::AuthService auth(store.value());
   syncbox::server::OpService ops(store.value());
-  syncbox::server::Api api(store.value(), auth, ops);
+  syncbox::server::Api api(store.value(), auth, ops, blobs);
   syncbox::net::HttpServer server(options.listen, options.port, api, 2);
 
   auto started = server.start();

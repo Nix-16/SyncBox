@@ -153,6 +153,7 @@ syncbox_set_warnings(syncbox_net)
 add_library(syncbox_server STATIC
   src/server/api.cpp
   src/server/auth_service.cpp
+  src/server/blob_store.cpp
   src/server/op_service.cpp)
 
 target_include_directories(syncbox_server

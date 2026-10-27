@@ -19,6 +19,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "test_support.hpp"
 
@@ -35,9 +36,10 @@ struct ClientResponse {
   std::map<std::string, std::string> headers;
 };
 
-[[nodiscard]] ClientResponse http_call(std::uint16_t port, http::verb method,
-                                       const std::string& target, const std::string& body = {},
-                                       const std::string& token = {}) {
+[[nodiscard]] ClientResponse http_call(
+    std::uint16_t port, http::verb method, const std::string& target,
+    const std::string& body = {}, const std::string& token = {},
+    const std::map<std::string, std::string>& extra_headers = {}) {
   asio::io_context io_context;
   tcp::resolver resolver(io_context);
   beast::tcp_stream stream(io_context);
@@ -48,6 +50,9 @@ struct ClientResponse {
   request.set(http::field::content_type, "application/json");
   if (!token.empty()) {
     request.set(http::field::authorization, "Bearer " + token);
+  }
+  for (const auto& header : extra_headers) {
+    request.set(header.first, header.second);
   }
   request.body() = body;
   request.prepare_payload();
@@ -98,9 +103,11 @@ class ServerApiTest : public ::testing::Test {
     record.expires_at = syncbox::now_millis() + 3600 * 1000;
     ASSERT_TRUE(store_->insert_enrollment_token(record));
 
+    blobs_ = std::make_unique<syncbox::server::BlobStore>(*store_, directory_.file("blobs"));
+    ASSERT_TRUE(blobs_->prepare());
     auth_ = std::make_unique<syncbox::server::AuthService>(*store_);
     ops_ = std::make_unique<syncbox::server::OpService>(*store_);
-    api_ = std::make_unique<syncbox::server::Api>(*store_, *auth_, *ops_);
+    api_ = std::make_unique<syncbox::server::Api>(*store_, *auth_, *ops_, *blobs_);
     server_ = std::make_unique<syncbox::net::HttpServer>("127.0.0.1", 0, *api_, 2);
     ASSERT_TRUE(server_->start());
   }
@@ -110,6 +117,7 @@ class ServerApiTest : public ::testing::Test {
     api_.reset();
     ops_.reset();
     auth_.reset();
+    blobs_.reset();
     store_.reset();
   }
 
@@ -144,6 +152,7 @@ class ServerApiTest : public ::testing::Test {
   std::unique_ptr<syncbox::server::AuthService> auth_;
   std::unique_ptr<syncbox::server::OpService> ops_;
   std::unique_ptr<syncbox::server::Api> api_;
+  std::unique_ptr<syncbox::server::BlobStore> blobs_;
   std::unique_ptr<syncbox::net::HttpServer> server_;
   std::string space_id_;
   std::string enrollment_token_;
@@ -289,4 +298,79 @@ TEST_F(ServerApiTest, StaleRevisionReturnsConflict) {
   auto body = nlohmann::json::parse(conflict.body);
   EXPECT_EQ(body["error"]["code"].get<std::string>(), "REVISION_CONFLICT");
   EXPECT_EQ(body["error"]["details"]["current"]["revision"].get<std::int64_t>(), 2);
+}
+
+
+TEST_F(ServerApiTest, BlobUploadAndRangeDownload) {
+  const std::string token = enroll_device();
+
+  const std::string content = "hello world";
+  const std::string chunks[3] = {"hello", " worl", "d"};
+  std::vector<std::string> chunk_hashes;
+  for (const auto& chunk : chunks) {
+    auto hash = syncbox::sha256(chunk);
+    ASSERT_TRUE(hash);
+    chunk_hashes.push_back(hash.value().to_hex());
+  }
+  auto content_hash = syncbox::sha256(content);
+  ASSERT_TRUE(content_hash);
+  const std::string content_hex = content_hash.value().to_hex();
+
+  nlohmann::json init{{"content_hash", content_hex},
+                      {"size", 11},
+                      {"chunk_size", 5},
+                      {"chunk_hashes", chunk_hashes}};
+  auto started =
+      http_call(server_->port(), http::verb::post, "/v1/blobs", init.dump(), token);
+  ASSERT_EQ(started.status, 201) << started.body;
+  auto started_json = nlohmann::json::parse(started.body);
+  EXPECT_EQ(started_json["status"].get<std::string>(), "uploading");
+  ASSERT_EQ(started_json["missing_chunks"].size(), 3U);
+
+  for (int index = 0; index < 3; ++index) {
+    auto uploaded = http_call(
+        server_->port(), http::verb::put,
+        "/v1/blobs/" + content_hex + "/chunks/" + std::to_string(index), chunks[index], token,
+        {{"X-Chunk-SHA256", chunk_hashes[static_cast<std::size_t>(index)]},
+         {"Content-Type", "application/octet-stream"}});
+    ASSERT_EQ(uploaded.status, 204) << uploaded.body;
+  }
+
+  auto status = http_call(server_->port(), http::verb::get,
+                          "/v1/blobs/" + content_hex + "/status", {}, token);
+  ASSERT_EQ(status.status, 200) << status.body;
+  EXPECT_TRUE(nlohmann::json::parse(status.body)["missing_chunks"].empty());
+
+  auto completed = http_call(server_->port(), http::verb::post,
+                             "/v1/blobs/" + content_hex + "/complete", {}, token);
+  ASSERT_EQ(completed.status, 200) << completed.body;
+  EXPECT_EQ(nlohmann::json::parse(completed.body)["size"].get<std::int64_t>(), 11);
+
+  auto dedup = http_call(server_->port(), http::verb::post, "/v1/blobs", init.dump(), token);
+  ASSERT_EQ(dedup.status, 200) << dedup.body;
+  EXPECT_EQ(nlohmann::json::parse(dedup.body)["status"].get<std::string>(), "complete");
+
+  nlohmann::json create{{"op_id", syncbox::generate_uuid_v7()},
+                        {"kind", "create"},
+                        {"file_id", nullptr},
+                        {"base_revision", 0},
+                        {"path", "blob.txt"},
+                        {"content_hash", content_hex},
+                        {"size", 11},
+                        {"mtime_ms", 1},
+                        {"client_seq", 0},
+                        {"conflict", false}};
+  auto committed = http_call(server_->port(), http::verb::post,
+                             "/v1/spaces/" + space_id_ + "/ops", create.dump(), token);
+  ASSERT_EQ(committed.status, 200) << committed.body;
+
+  auto ranged = http_call(server_->port(), http::verb::get, "/v1/blobs/" + content_hex, {},
+                          token, {{"Range", "bytes=6-10"}});
+  ASSERT_EQ(ranged.status, 206) << ranged.body;
+  EXPECT_EQ(ranged.body, "world");
+  EXPECT_EQ(ranged.headers["content-range"], "bytes 6-10/11");
+
+  auto full = http_call(server_->port(), http::verb::get, "/v1/blobs/" + content_hex, {}, token);
+  ASSERT_EQ(full.status, 200) << full.body;
+  EXPECT_EQ(full.body, content);
 }

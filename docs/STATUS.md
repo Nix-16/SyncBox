@@ -3,10 +3,10 @@
 | 项目 | 内容 |
 |---|---|
 | 报告日期 | 2026-10-27 |
-| 当前里程碑 | **M4 进行中：HTTP/认证/CAS/变更流已实现；Blob/WS 未完成** |
-| 代码状态 | core + store + fs + net/server（HTTP/认证/提交/变更流）；**Blob/WS/同步引擎未实现** |
+| 当前里程碑 | **M4 进行中：HTTP/认证/CAS/变更流/Blob 已实现；WS 未完成** |
+| 代码状态 | core + store + fs + net/server（HTTP/认证/提交/变更流/Blob）；**WS/同步引擎未实现** |
 | 构建状态 | **可构建**：CMake 3.22 + vcpkg（storage/unicode/crypto/networking/json） |
-| 测试状态 | 59 个测试（含 HTTP 集成）；Linux Debug 与 ASan/UBSan 通过 |
+| 测试状态 | 60 个测试（含 HTTP/Blob 集成）；Linux Debug 与 ASan/UBSan 通过 |
 | 版本控制 | Git 已初始化，远端 `github.com/Nix-16/SyncBox` |
 
 > 本文档是项目真实状态的唯一依据。任何“已完成”的声明必须在此处有对应条目与证据（文件路径、命令输出、测试名称）。**当前没有任何同步功能可用。**
@@ -134,8 +134,8 @@ CI 运行（run [39631445766](https://github.com/Nix-16/SyncBox/actions/runs/396
 |---|---|---|
 | 配置 | `VCPKG_ROOT=~/vcpkg cmake --preset dev` | 成功；Boost 1.91（asio/beast）、nlohmann-json 3.12 |
 | 编译 | `cmake --build --preset dev` | 成功 |
-| 测试 | `ctest --preset dev --output-on-failure` | **59/59 通过** |
-| ASan/UBSan | `cmake --preset asan && cmake --build --preset asan && ctest --preset asan` | **59/59 通过** |
+| 测试 | `ctest --preset dev --output-on-failure` | **60/60 通过** |
+| ASan/UBSan | `cmake --preset asan && cmake --build --preset asan && ctest --preset asan` | **60/60 通过** |
 
 > 环境说明：Boost 1.91 要求 CMake ≥ 3.25，且 GitHub 下载被重置。vcpkg 所需的 CMake 4.3.2、Ninja 1.13.2 与 49+ 个 Boost 模块源码通过镜像下载后放入 vcpkg 缓存；vcpkg 校验哈希后使用，版本与 manifest 未改变。
 

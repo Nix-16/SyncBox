@@ -177,6 +177,8 @@ class ServerStore {
   [[nodiscard]] Result<std::optional<BlobRecord>> find_blob(std::string_view content_hash);
   [[nodiscard]] Result<void> upsert_uploading_blob(const BlobRecord& blob);
   [[nodiscard]] Result<void> insert_blob_chunk(const BlobChunkRecord& chunk);
+  [[nodiscard]] Result<std::optional<BlobChunkRecord>> find_blob_chunk(
+      std::string_view content_hash, int chunk_index);
   [[nodiscard]] Result<void> mark_blob_chunk_received(std::string_view content_hash,
                                                       int chunk_index,
                                                       std::int64_t received_at);
@@ -184,6 +186,8 @@ class ServerStore {
   [[nodiscard]] Result<void> mark_blob_complete(std::string_view content_hash,
                                                 std::int64_t completed_at);
   [[nodiscard]] Result<void> increment_blob_ref(std::string_view content_hash);
+  [[nodiscard]] Result<bool> blob_referenced_in_space(std::string_view space_id,
+                                                      std::string_view content_hash);
 
  private:
   explicit ServerStore(Database db) noexcept : db_(std::move(db)) {}

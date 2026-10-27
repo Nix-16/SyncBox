@@ -183,6 +183,10 @@ struct ParsedTarget {
   return request.method == http::verb::post;
 }
 
+[[nodiscard]] bool is_put(const net::HttpRequest& request) {
+  return request.method == http::verb::put;
+}
+
 }  // namespace
 
 net::HttpResponse Api::handle(const net::HttpRequest& request) {
@@ -240,6 +244,170 @@ net::HttpResponse Api::handle(const net::HttpRequest& request) {
                                              {"status", device.value().status},
                                              {"last_ack_seq", device.value().last_ack_seq.value},
                                              {"server_seq", latest.value().value}});
+  }
+
+  // /v1/blobs...
+  if (target.segments.size() >= 2 && target.segments[0] == "v1" &&
+      target.segments[1] == "blobs") {
+    const auto token = bearer_token(request);
+    if (!token.has_value()) {
+      return error_response(ErrorCode::AuthRequired, "missing bearer token");
+    }
+    auto device = auth_.authenticate(*token);
+    if (!device) {
+      return error_response(device.error());
+    }
+
+    if (is_post(request) && target.segments.size() == 2) {
+      auto body = nlohmann::json::parse(request.body, nullptr, false);
+      if (body.is_discarded()) {
+        return error_response(ErrorCode::BadRequest, "invalid JSON body");
+      }
+      try {
+        std::vector<std::string> chunk_hashes;
+        for (const auto& item : body.at("chunk_hashes")) {
+          chunk_hashes.push_back(item.get<std::string>());
+        }
+        auto result = blobs_.init_upload(body.at("content_hash").get<std::string>(),
+                                         body.at("size").get<std::int64_t>(),
+                                         body.at("chunk_size").get<std::int64_t>(),
+                                         chunk_hashes);
+        if (!result) {
+          return error_response(result.error());
+        }
+        nlohmann::json out{{"content_hash", body.at("content_hash").get<std::string>()},
+                           {"status", result.value().complete ? "complete" : "uploading"},
+                           {"missing_chunks", result.value().missing_chunks}};
+        return json_response(result.value().complete ? 200 : 201, out);
+      } catch (const std::exception& exception) {
+        return error_response(ErrorCode::BadRequest, exception.what());
+      }
+    }
+
+    if (is_put(request) && target.segments.size() == 5 && target.segments[3] == "chunks") {
+      const auto index = parse_int64(target.segments[4]);
+      if (!index.has_value() || *index < 0) {
+        return error_response(ErrorCode::BadRequest, "invalid chunk index");
+      }
+      const auto chunk_hash = header_value(request, "x-chunk-sha256");
+      if (!chunk_hash.has_value()) {
+        return error_response(ErrorCode::BadRequest, "X-Chunk-SHA256 header is required");
+      }
+      auto stored = blobs_.put_chunk(target.segments[2], static_cast<int>(*index), request.body,
+                                     *chunk_hash);
+      if (!stored) {
+        return error_response(stored.error());
+      }
+      net::HttpResponse response;
+      response.status = 204;
+      return response;
+    }
+
+    if (is_get(request) && target.segments.size() == 4 && target.segments[3] == "status") {
+      auto result = blobs_.status(target.segments[2]);
+      if (!result) {
+        return error_response(result.error());
+      }
+      nlohmann::json out{{"content_hash", target.segments[2]},
+                         {"state", result.value().complete ? "complete" : "uploading"},
+                         {"missing_chunks", result.value().missing_chunks}};
+      return json_response(200, out);
+    }
+
+    if (is_post(request) && target.segments.size() == 4 && target.segments[3] == "complete") {
+      auto completed = blobs_.complete(target.segments[2]);
+      if (!completed) {
+        nlohmann::json details{{"content_hash", target.segments[2]}};
+        if (completed.error().code == ErrorCode::BlobIncomplete) {
+          auto status = blobs_.status(target.segments[2]);
+          if (status) {
+            details["missing_chunks"] = status.value().missing_chunks;
+          }
+        }
+        return error_response(completed.error().code, completed.error().message, details);
+      }
+      auto size = blobs_.size_of(target.segments[2]);
+      nlohmann::json out{{"content_hash", target.segments[2]},
+                         {"status", "complete"},
+                         {"size", size ? size.value() : 0}};
+      return json_response(200, out);
+    }
+
+    if (is_get(request) && target.segments.size() == 3) {
+      const std::string& content_hash = target.segments[2];
+      auto referenced = store_.blob_referenced_in_space(device.value().space_id, content_hash);
+      if (!referenced) {
+        return error_response(referenced.error());
+      }
+      if (!referenced.value()) {
+        return error_response(ErrorCode::SpaceForbidden, "blob is not part of this space");
+      }
+
+      auto size = blobs_.size_of(content_hash);
+      if (!size) {
+        return error_response(size.error());
+      }
+
+      std::int64_t offset = 0;
+      std::int64_t length = -1;
+      std::string range_header;
+      if (const auto range = header_value(request, "range"); range.has_value()) {
+        range_header = *range;
+        constexpr std::string_view kPrefix = "bytes=";
+        if (range_header.compare(0, kPrefix.size(), kPrefix) != 0) {
+          return error_response(ErrorCode::BadRequest, "unsupported range unit");
+        }
+        const std::string spec = range_header.substr(kPrefix.size());
+        const auto dash = spec.find('-');
+        if (dash == std::string::npos) {
+          return error_response(ErrorCode::BadRequest, "invalid range");
+        }
+        const std::string start_text = spec.substr(0, dash);
+        const std::string end_text = spec.substr(dash + 1);
+        if (start_text.empty()) {
+          const auto suffix = parse_int64(end_text);
+          if (!suffix.has_value() || *suffix <= 0) {
+            return error_response(ErrorCode::BadRequest, "invalid range");
+          }
+          offset = std::max<std::int64_t>(0, size.value() - *suffix);
+          length = *suffix;
+        } else {
+          const auto start = parse_int64(start_text);
+          if (!start.has_value() || *start < 0) {
+            return error_response(ErrorCode::BadRequest, "invalid range");
+          }
+          offset = *start;
+          if (!end_text.empty()) {
+            const auto end = parse_int64(end_text);
+            if (!end.has_value() || *end < offset) {
+              return error_response(ErrorCode::BadRequest, "invalid range");
+            }
+            length = *end - offset + 1;
+          }
+        }
+      }
+
+      auto data = blobs_.read_range(content_hash, offset, length);
+      if (!data) {
+        return error_response(data.error());
+      }
+
+      net::HttpResponse response;
+      response.content_type = "application/octet-stream";
+      response.body = std::move(data.value());
+      response.headers.emplace_back("Accept-Ranges", "bytes");
+      if (!range_header.empty()) {
+        const std::int64_t total = size.value();
+        const std::int64_t last = offset + static_cast<std::int64_t>(response.body.size()) - 1;
+        response.status = 206;
+        response.headers.emplace_back("Content-Range",
+                                      "bytes " + std::to_string(offset) + "-" +
+                                          std::to_string(last) + "/" + std::to_string(total));
+      } else {
+        response.status = 200;
+      }
+      return response;
+    }
   }
 
   // /v1/spaces/{space_id}/...

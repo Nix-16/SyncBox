@@ -2,6 +2,7 @@
 
 #include <syncbox/net/http_server.hpp>
 #include <syncbox/server/auth_service.hpp>
+#include <syncbox/server/blob_store.hpp>
 #include <syncbox/server/op_service.hpp>
 
 #include <mutex>
@@ -12,8 +13,8 @@ namespace syncbox::server {
 // section 3 for the endpoints available in M4.
 class Api final : public net::RequestHandler {
  public:
-  Api(ServerStore& store, AuthService& auth, OpService& ops)
-      : store_(store), auth_(auth), ops_(ops) {}
+  Api(ServerStore& store, AuthService& auth, OpService& ops, BlobStore& blobs)
+      : store_(store), auth_(auth), ops_(ops), blobs_(blobs) {}
 
   [[nodiscard]] net::HttpResponse handle(const net::HttpRequest& request) override;
 
@@ -21,6 +22,7 @@ class Api final : public net::RequestHandler {
   ServerStore& store_;
   AuthService& auth_;
   OpService& ops_;
+  BlobStore& blobs_;
   // SQLite uses a single writer connection; serialize request handling until
   // M9 introduces a dedicated writer queue.
   std::mutex mutex_;
