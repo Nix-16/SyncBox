@@ -3,7 +3,7 @@
 | 项目 | 内容 |
 |---|---|
 | 报告日期 | 2026-10-27 |
-| 当前里程碑 | **M4 功能与本地验收完成（TLS/GC 项按计划延后）；CI 待最新提交** |
+| 当前里程碑 | **M4 完成（三平台 CI 7/7）；M5 未开始** |
 | 代码状态 | core + store + fs + net/server（HTTP/认证/提交/变更流/Blob/WS）；**同步引擎未实现** |
 | 构建状态 | **可构建**：CMake 3.22 + vcpkg（storage/unicode/crypto/networking/json） |
 | 测试状态 | 67 个测试（含 HTTP/Blob/WS 集成）；Linux Debug 与 ASan/UBSan 通过 |
@@ -138,6 +138,8 @@ CI 运行（run [39631445766](https://github.com/Nix-16/SyncBox/actions/runs/396
 | ASan/UBSan | `cmake --preset asan && cmake --build --preset asan && ctest --preset asan` | **67/67 通过** |
 
 > 环境说明：Boost 1.91 要求 CMake ≥ 3.25，且 GitHub 下载被重置。vcpkg 所需的 CMake 4.3.2、Ninja 1.13.2 与 49+ 个 Boost 模块源码通过镜像下载后放入 vcpkg 缓存；vcpkg 校验哈希后使用，版本与 manifest 未改变。
+
+CI 运行（run `40534858720`，提交 `bd5d830`）：**7/7 job 成功** —— Ubuntu Debug/Release、Windows Debug/Release、macOS-14 Debug/Release、ASan+UBSan，全部执行了构建与 69 个测试。
 
 CI 运行（run [39813188841](https://github.com/Nix-16/SyncBox/actions/runs/39813188841)，提交 `ce19b11`）：**7/7 job 成功** —— Ubuntu Debug/Release、Windows Debug/Release、macOS-14 Debug/Release、ASan+UBSan。
 
