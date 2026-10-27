@@ -131,7 +131,8 @@ syncbox_set_warnings(syncbox_fs)
 # Networking: asynchronous HTTP server (Boost.Beast).
 # ---------------------------------------------------------------------------
 add_library(syncbox_net STATIC
-  src/net/http_server.cpp)
+  src/net/http_server.cpp
+  src/net/ws_hub.cpp)
 
 target_include_directories(syncbox_net
   PUBLIC
@@ -143,7 +144,9 @@ target_link_libraries(syncbox_net
     Boost::asio
     Boost::beast
     Boost::system
-  PRIVATE Threads::Threads)
+  PRIVATE
+    Threads::Threads
+    nlohmann_json::nlohmann_json)
 
 syncbox_set_warnings(syncbox_net)
 

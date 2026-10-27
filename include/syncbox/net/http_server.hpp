@@ -4,6 +4,7 @@
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/tcp.hpp>
+#include <boost/beast/core/tcp_stream.hpp>
 #include <boost/beast/http.hpp>
 
 #include <atomic>
@@ -31,10 +32,28 @@ struct HttpResponse {
   std::vector<std::pair<std::string, std::string>> headers;
 };
 
+struct UpgradeResult {
+  bool upgraded = false;
+  HttpResponse rejection;
+};
+
 class RequestHandler {
  public:
   virtual ~RequestHandler() = default;
   virtual HttpResponse handle(const HttpRequest& request) = 0;
+
+  // Called for WebSocket upgrade requests to /v1/ws. Returning
+  // upgraded=true transfers ownership of the stream; otherwise rejection is
+  // sent as a normal HTTP response.
+  virtual UpgradeResult handle_upgrade(
+      boost::beast::tcp_stream&& stream,
+      boost::beast::http::request<boost::beast::http::string_body>&& request,
+      const HttpRequest& metadata) {
+    (void)stream;
+    (void)request;
+    (void)metadata;
+    return UpgradeResult{};
+  }
 };
 
 // Minimal asynchronous HTTP/1.1 server. Handlers run on the server's

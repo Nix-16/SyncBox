@@ -9,9 +9,12 @@
 #include <syncbox/store/migrations.hpp>
 #include <syncbox/store/server_store.hpp>
 
+#include <boost/asio/connect.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/beast/core.hpp>
+#include <boost/beast/core/buffers_to_string.hpp>
+#include <boost/beast/websocket.hpp>
 #include <boost/beast/http.hpp>
 
 #include <cctype>
@@ -28,6 +31,7 @@ namespace {
 namespace asio = boost::asio;
 namespace beast = boost::beast;
 namespace http = beast::http;
+namespace websocket = beast::websocket;
 using asio::ip::tcp;
 
 struct ClientResponse {
@@ -75,6 +79,31 @@ struct ClientResponse {
   return result;
 }
 
+class WsClient {
+ public:
+  WsClient(std::uint16_t port, const std::string& space_id, const std::string& token)
+      : websocket_(io_context_) {
+    tcp::resolver resolver(io_context_);
+    const auto endpoints = resolver.resolve("127.0.0.1", std::to_string(port));
+    asio::connect(websocket_.next_layer(), endpoints);
+    websocket_.set_option(websocket::stream_base::decorator(
+        [token](websocket::request_type& request) {
+          request.set(http::field::authorization, "Bearer " + token);
+        }));
+    websocket_.handshake("127.0.0.1", "/v1/ws?space_id=" + space_id);
+  }
+
+  [[nodiscard]] std::string read() {
+    beast::flat_buffer buffer;
+    websocket_.read(buffer);
+    return beast::buffers_to_string(buffer.data());
+  }
+
+ private:
+  asio::io_context io_context_;
+  websocket::stream<tcp::socket> websocket_;
+};
+
 }  // namespace
 
 class ServerApiTest : public ::testing::Test {
@@ -107,7 +136,7 @@ class ServerApiTest : public ::testing::Test {
     ASSERT_TRUE(blobs_->prepare());
     auth_ = std::make_unique<syncbox::server::AuthService>(*store_);
     ops_ = std::make_unique<syncbox::server::OpService>(*store_);
-    api_ = std::make_unique<syncbox::server::Api>(*store_, *auth_, *ops_, *blobs_);
+    api_ = std::make_unique<syncbox::server::Api>(*store_, *auth_, *ops_, *blobs_, hub_);
     server_ = std::make_unique<syncbox::net::HttpServer>("127.0.0.1", 0, *api_, 2);
     ASSERT_TRUE(server_->start());
   }
@@ -153,6 +182,7 @@ class ServerApiTest : public ::testing::Test {
   std::unique_ptr<syncbox::server::OpService> ops_;
   std::unique_ptr<syncbox::server::Api> api_;
   std::unique_ptr<syncbox::server::BlobStore> blobs_;
+  syncbox::net::WsHub hub_;
   std::unique_ptr<syncbox::net::HttpServer> server_;
   std::string space_id_;
   std::string enrollment_token_;
@@ -373,4 +403,35 @@ TEST_F(ServerApiTest, BlobUploadAndRangeDownload) {
   auto full = http_call(server_->port(), http::verb::get, "/v1/blobs/" + content_hex, {}, token);
   ASSERT_EQ(full.status, 200) << full.body;
   EXPECT_EQ(full.body, content);
+}
+
+
+TEST_F(ServerApiTest, WebSocketReceivesChangeHint) {
+  const std::string token = enroll_device();
+  WsClient client(server_->port(), space_id_, token);
+
+  auto welcome = nlohmann::json::parse(client.read());
+  EXPECT_EQ(welcome["type"].get<std::string>(), "welcome");
+  EXPECT_EQ(welcome["space_id"].get<std::string>(), space_id_);
+  EXPECT_EQ(welcome["heartbeat_s"].get<int>(), 25);
+
+  const auto hash = make_blob("websocket");
+  nlohmann::json create{{"op_id", syncbox::generate_uuid_v7()},
+                        {"kind", "create"},
+                        {"file_id", nullptr},
+                        {"base_revision", 0},
+                        {"path", "ws.txt"},
+                        {"content_hash", hash.to_hex()},
+                        {"size", 9},
+                        {"mtime_ms", 1},
+                        {"client_seq", 0},
+                        {"conflict", false}};
+  auto committed = http_call(server_->port(), http::verb::post,
+                             "/v1/spaces/" + space_id_ + "/ops", create.dump(), token);
+  ASSERT_EQ(committed.status, 200) << committed.body;
+
+  auto change = nlohmann::json::parse(client.read());
+  EXPECT_EQ(change["type"].get<std::string>(), "change");
+  EXPECT_EQ(change["space_id"].get<std::string>(), space_id_);
+  EXPECT_GE(change["seq"].get<std::int64_t>(), 1);
 }

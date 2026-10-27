@@ -189,6 +189,54 @@ struct ParsedTarget {
 
 }  // namespace
 
+net::UpgradeResult Api::handle_upgrade(
+    boost::beast::tcp_stream&& stream,
+    boost::beast::http::request<boost::beast::http::string_body>&& request,
+    const net::HttpRequest& metadata) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  net::UpgradeResult result;
+  const ParsedTarget target = parse_target(metadata.target);
+
+  if (target.path != "/v1/ws") {
+    result.rejection = error_response(ErrorCode::NotFound, "route not found");
+    return result;
+  }
+  const auto space_it = target.query.find("space_id");
+  if (space_it == target.query.end()) {
+    result.rejection = error_response(ErrorCode::BadRequest, "space_id is required");
+    return result;
+  }
+  const std::string& space_id = space_it->second;
+
+  const auto token = bearer_token(metadata);
+  if (!token.has_value()) {
+    result.rejection = error_response(ErrorCode::AuthRequired, "missing bearer token");
+    return result;
+  }
+  auto device = auth_.authenticate(*token);
+  if (!device) {
+    result.rejection = error_response(device.error());
+    return result;
+  }
+  if (device.value().space_id != space_id) {
+    result.rejection =
+        error_response(ErrorCode::SpaceForbidden, "device does not belong to this space");
+    return result;
+  }
+  auto latest = store_.latest_seq(space_id);
+  if (!latest) {
+    result.rejection = error_response(latest.error());
+    return result;
+  }
+
+  auto session = std::make_shared<net::WsSession>(std::move(stream), hub_, space_id,
+                                                  latest.value());
+  hub_.add(session);
+  session->run(std::move(request));
+  result.upgraded = true;
+  return result;
+}
+
 net::HttpResponse Api::handle(const net::HttpRequest& request) {
   std::lock_guard<std::mutex> lock(mutex_);
   const ParsedTarget target = parse_target(request.target);
@@ -475,6 +523,9 @@ net::HttpResponse Api::handle(const net::HttpRequest& request) {
           auto response = json_response(200, success->response);
           if (success->replayed) {
             response.headers.emplace_back("X-Idempotent-Replay", "true");
+          } else if (success->response.contains("seq")) {
+            hub_.notify_change(space_id,
+                               Seq{success->response["seq"].get<std::int64_t>()});
           }
           return response;
         }

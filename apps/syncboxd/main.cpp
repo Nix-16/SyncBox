@@ -4,6 +4,7 @@
 #include <syncbox/core/version.hpp>
 #include <syncbox/server/api.hpp>
 #include <syncbox/server/blob_store.hpp>
+#include <syncbox/net/ws_hub.hpp>
 #include <syncbox/server/auth_service.hpp>
 #include <syncbox/server/op_service.hpp>
 #include <syncbox/store/migrations.hpp>
@@ -225,7 +226,8 @@ int run_server(int argc, char** argv) {
 
   syncbox::server::AuthService auth(store.value());
   syncbox::server::OpService ops(store.value());
-  syncbox::server::Api api(store.value(), auth, ops, blobs);
+  syncbox::net::WsHub hub;
+  syncbox::server::Api api(store.value(), auth, ops, blobs, hub);
   syncbox::net::HttpServer server(options.listen, options.port, api, 2);
 
   auto started = server.start();

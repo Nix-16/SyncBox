@@ -2,6 +2,7 @@
 
 #include <boost/asio/strand.hpp>
 #include <boost/beast/core.hpp>
+#include <boost/beast/websocket.hpp>
 
 #include <exception>
 #include <optional>
@@ -47,13 +48,31 @@ class Session : public std::enable_shared_from_this<Session> {
     auto request = parser_->release();
     buffer_.consume(buffer_.size());
 
+    const unsigned version = request.version();
+    const bool keep_alive = request.keep_alive();
+    const std::string target(request.target());
+
     HttpRequest input;
     input.method = request.method();
-    input.target = std::string(request.target());
+    input.target = target;
     input.body = request.body();
     input.content_type = std::string(request[http::field::content_type]);
     for (const auto& field : request) {
       input.headers.emplace_back(std::string(field.name_string()), std::string(field.value()));
+    }
+
+    if (beast::websocket::is_upgrade(request) && target.rfind("/v1/ws", 0) == 0) {
+      auto decision = handler_.handle_upgrade(std::move(stream_), std::move(request), input);
+      if (decision.upgraded) {
+        return;
+      }
+      if (decision.rejection.status == 0) {
+        decision.rejection.status = 400;
+        decision.rejection.body =
+            R"({"error":{"code":"BAD_REQUEST","message":"websocket upgrade failed"}})";
+      }
+      send_response(std::move(decision.rejection), version, false);
+      return;
     }
 
     HttpResponse output;
@@ -68,15 +87,19 @@ class Session : public std::enable_shared_from_this<Session> {
       output.body = R"({"error":{"code":"INTERNAL","message":"unhandled exception"}})";
     }
 
+    send_response(std::move(output), version, keep_alive);
+  }
+
+  void send_response(HttpResponse output, unsigned version, bool keep_alive) {
     auto response = std::make_shared<http::response<http::string_body>>(
-        static_cast<http::status>(output.status), request.version());
+        static_cast<http::status>(output.status), version);
     response->set(http::field::content_type, output.content_type);
     response->set(http::field::server, "syncboxd");
     for (const auto& header : output.headers) {
       response->set(header.first, header.second);
     }
     response->body() = std::move(output.body);
-    response->keep_alive(request.keep_alive());
+    response->keep_alive(keep_alive);
     response->prepare_payload();
 
     http::async_write(
