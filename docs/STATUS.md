@@ -3,7 +3,7 @@
 | 项目 | 内容 |
 |---|---|
 | 报告日期 | 2026-10-27 |
-| 当前里程碑 | **M4 功能完成（HTTP/认证/CAS/变更流/Blob/WS）；验收与并发测试待补** |
+| 当前里程碑 | **M4 功能与本地验收完成（TLS/GC 项按计划延后）；CI 待最新提交** |
 | 代码状态 | core + store + fs + net/server（HTTP/认证/提交/变更流/Blob/WS）；**同步引擎未实现** |
 | 构建状态 | **可构建**：CMake 3.22 + vcpkg（storage/unicode/crypto/networking/json） |
 | 测试状态 | 67 个测试（含 HTTP/Blob/WS 集成）；Linux Debug 与 ASan/UBSan 通过 |

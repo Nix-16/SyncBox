@@ -18,7 +18,8 @@ add_executable(syncbox_unit_tests
   unit/fs_change_test.cpp
   unit/fs_debounce_test.cpp
   unit/server_api_test.cpp
-  unit/op_service_test.cpp)
+  unit/op_service_test.cpp
+  unit/server_crash_test.cpp)
 
 target_link_libraries(syncbox_unit_tests
   PRIVATE
@@ -30,17 +31,21 @@ target_link_libraries(syncbox_unit_tests
 
 syncbox_set_warnings(syncbox_unit_tests)
 
-# Helper process used by StoreCrashTest (FI-16 prototype).
+# Helper processes used by crash tests (FI-16 prototype).
 add_executable(syncbox_crash_writer helpers/crash_writer.cpp)
 target_link_libraries(syncbox_crash_writer PRIVATE syncbox_store)
 syncbox_set_warnings(syncbox_crash_writer)
+
+add_executable(syncbox_server_crash_writer helpers/server_crash_writer.cpp)
+target_link_libraries(syncbox_server_crash_writer PRIVATE syncbox_store)
+syncbox_set_warnings(syncbox_server_crash_writer)
 
 # Keep both executables in a flat directory for every configuration. With
 # multi-config generators (Visual Studio), $<TARGET_FILE> resolves into a
 # per-config subdirectory; a config-independent path keeps the crash helper
 # discoverable from the test environment on all platforms.
 set(SYNCBOX_TEST_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}")
-foreach(target syncbox_unit_tests syncbox_crash_writer)
+foreach(target syncbox_unit_tests syncbox_crash_writer syncbox_server_crash_writer)
   set_target_properties(${target} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${SYNCBOX_TEST_OUTPUT_DIR}"
     RUNTIME_OUTPUT_DIRECTORY_DEBUG "${SYNCBOX_TEST_OUTPUT_DIR}"

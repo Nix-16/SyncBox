@@ -17,11 +17,13 @@
 #include <boost/beast/websocket.hpp>
 #include <boost/beast/http.hpp>
 
+#include <atomic>
 #include <cctype>
 #include <map>
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "test_support.hpp"
@@ -500,4 +502,65 @@ TEST_F(ServerApiTest, RejectsCorruptChunk) {
   auto completed = http_call(server_->port(), http::verb::post,
                              "/v1/blobs/" + content_hex + "/complete", {}, token);
   EXPECT_EQ(completed.status, 200) << completed.body;
+}
+
+
+TEST_F(ServerApiTest, ConcurrentUpdatesOnlyOneWins) {
+  const std::string token = enroll_device();
+  const auto first_hash = make_blob("base");
+  nlohmann::json create{{"op_id", syncbox::generate_uuid_v7()},
+                        {"kind", "create"},
+                        {"file_id", nullptr},
+                        {"base_revision", 0},
+                        {"path", "race.txt"},
+                        {"content_hash", first_hash.to_hex()},
+                        {"size", 4},
+                        {"mtime_ms", 1},
+                        {"client_seq", 0},
+                        {"conflict", false}};
+  auto created = http_call(server_->port(), http::verb::post,
+                           "/v1/spaces/" + space_id_ + "/ops", create.dump(), token);
+  ASSERT_EQ(created.status, 200) << created.body;
+  const std::string file_id = nlohmann::json::parse(created.body)["file_id"].get<std::string>();
+
+  std::vector<std::string> bodies;
+  for (int i = 0; i < 10; ++i) {
+    const std::string content = "update-" + std::to_string(i);
+    const auto hash = make_blob(content);
+    nlohmann::json update{{"op_id", syncbox::generate_uuid_v7()},
+                          {"kind", "update"},
+                          {"file_id", file_id},
+                          {"base_revision", 1},
+                          {"path", "race.txt"},
+                          {"content_hash", hash.to_hex()},
+                          {"size", content.size()},
+                          {"mtime_ms", 2},
+                          {"client_seq", 0},
+                          {"conflict", false}};
+    bodies.push_back(update.dump());
+  }
+
+  std::atomic<int> successes{0};
+  std::atomic<int> conflicts{0};
+  std::vector<std::thread> threads;
+  threads.reserve(bodies.size());
+  const std::uint16_t port = server_->port();
+  const std::string space_id = space_id_;
+  for (const auto& body : bodies) {
+    threads.emplace_back([&, body] {
+      auto response =
+          http_call(port, http::verb::post, "/v1/spaces/" + space_id + "/ops", body, token);
+      if (response.status == 200) {
+        ++successes;
+      } else if (response.status == 409) {
+        ++conflicts;
+      }
+    });
+  }
+  for (auto& thread : threads) {
+    thread.join();
+  }
+
+  EXPECT_EQ(successes.load(), 1);
+  EXPECT_EQ(conflicts.load(), 9);
 }
