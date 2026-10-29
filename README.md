@@ -6,14 +6,14 @@ C++17 跨平台双向文件同步工具（Windows / Linux / macOS），中心服
 
 ## 当前状态
 
-> **M5 进行中：引擎、冲突解决、持续同步、WS 提示与恢复已实现；全量核对未完成。**
+> **M5 核心完成：引擎、冲突解决、持续同步、WS、恢复、核对与流式传输已实现。**
 
 - 需求、架构、数据库、协议、冲突策略、安全、测试计划与路线图已冻结（见 `docs/`）。
 - 已实现：版本模型、路径规范化（NFC/casefold）、流式 SHA-256、UUIDv7、
   两套 SQLite schema/迁移、Repository、文件扫描/差分、原子替换、
   inotify / ReadDirectoryChangesW / FSEvents 监控、服务端 HTTP/认证/提交/变更流/Blob/WebSocket。
 - `syncboxd` 可启动 HTTP 服务并提供设备注册/提交/变更流；`syncbox` 仍为骨架。
-- 78 个测试通过（含 HTTP 集成与进程崩溃注入）。
+- 80 个测试通过（含 HTTP 集成与进程崩溃注入）。
 - 真实进度以 [docs/STATUS.md](docs/STATUS.md) 为准，本文档不重复其结论。
 
 ## 文档

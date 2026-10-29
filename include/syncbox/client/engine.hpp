@@ -38,6 +38,7 @@ class SyncEngine {
   [[nodiscard]] Result<void> scan_local_changes();
   [[nodiscard]] Result<void> push_pending();
   [[nodiscard]] Result<void> pull_remote();
+  [[nodiscard]] Result<void> reconcile();
 
  private:
   struct StagedContent {

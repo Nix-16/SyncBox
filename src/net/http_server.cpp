@@ -16,7 +16,7 @@ namespace asio = boost::asio;
 namespace beast = boost::beast;
 namespace http = beast::http;
 
-constexpr std::size_t kMaxBodyBytes = 1024 * 1024;
+constexpr std::size_t kMaxBodyBytes = 16 * 1024 * 1024;
 
 class Session : public std::enable_shared_from_this<Session> {
  public:

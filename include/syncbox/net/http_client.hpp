@@ -4,6 +4,7 @@
 
 #include <boost/beast/http/verb.hpp>
 
+#include <filesystem>
 #include <map>
 #include <string>
 #include <string_view>
@@ -28,6 +29,11 @@ class HttpClient {
       boost::beast::http::verb method, std::string_view target,
       std::string_view body = {}, std::string_view token = {},
       std::vector<std::pair<std::string, std::string>> headers = {});
+
+  // Streams the response body to `destination`; returns the HTTP status.
+  [[nodiscard]] Result<unsigned> download_to_file(
+      std::string_view target, std::string_view token,
+      const std::filesystem::path& destination);
 
   [[nodiscard]] const std::string& base_url() const noexcept { return base_url_; }
 

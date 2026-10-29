@@ -239,6 +239,9 @@ net::UpgradeResult Api::handle_upgrade(
 
 net::HttpResponse Api::handle(const net::HttpRequest& request) {
   std::lock_guard<std::mutex> lock(mutex_);
+  if (request.method != http::verb::put && request.body.size() > 1024 * 1024) {
+    return error_response(ErrorCode::PayloadTooLarge, "request body exceeds 1 MiB");
+  }
   const ParsedTarget target = parse_target(request.target);
 
   if (is_get(request) && target.path == "/v1/health") {

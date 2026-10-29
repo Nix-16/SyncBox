@@ -991,23 +991,6 @@ Result<void> SyncEngine::push_pending() {
 
 Result<void> SyncEngine::download_blob(const std::string& hash_hex,
                                        const std::filesystem::path& target) {
-  auto response = http_.request(http::verb::get, "/v1/blobs/" + hash_hex, {},
-                                config_.device_token);
-  if (!response) {
-    return response.error();
-  }
-  if (response.value().status != 200) {
-    return make_error(ErrorCode::Unavailable, "blob download failed: " + response.value().body);
-  }
-
-  auto digest = sha256(response.value().body);
-  if (!digest) {
-    return digest.error();
-  }
-  if (digest.value().to_hex() != hash_hex) {
-    return make_error(ErrorCode::BlobHashMismatch, "downloaded blob hash mismatch");
-  }
-
   std::error_code error;
   std::filesystem::create_directories(target.parent_path(), error);
   if (error) {
@@ -1018,20 +1001,31 @@ Result<void> SyncEngine::download_blob(const std::string& hash_hex,
   if (!temp) {
     return temp.error();
   }
-  {
-    std::ofstream stream(temp.value(), std::ios::binary | std::ios::trunc);
-    if (!stream) {
-      return make_error(ErrorCode::IoError, "cannot create download temp file");
-    }
-    stream.write(response.value().body.data(),
-                 static_cast<std::streamsize>(response.value().body.size()));
-    stream.flush();
-    if (!stream) {
-      return make_error(ErrorCode::IoError, "cannot write download temp file");
-    }
+
+  auto status = http_.download_to_file("/v1/blobs/" + hash_hex, config_.device_token,
+                                       temp.value());
+  if (!status) {
+    std::filesystem::remove(temp.value(), error);
+    return status.error();
   }
+  if (status.value() != 200) {
+    std::filesystem::remove(temp.value(), error);
+    return make_error(ErrorCode::Unavailable, "blob download failed");
+  }
+
+  auto digest = sha256_file(temp.value());
+  if (!digest) {
+    std::filesystem::remove(temp.value(), error);
+    return digest.error();
+  }
+  if (digest.value().to_hex() != hash_hex) {
+    std::filesystem::remove(temp.value(), error);
+    return make_error(ErrorCode::BlobHashMismatch, "downloaded blob hash mismatch");
+  }
+
   auto synced = fs::sync_file(temp.value());
   if (!synced) {
+    std::filesystem::remove(temp.value(), error);
     return synced;
   }
   return fs::atomic_replace(target, temp.value());
@@ -1093,6 +1087,64 @@ Result<void> SyncEngine::apply_change(const nlohmann::json& change, Seq seq) {
   return store_.upsert_local_entry(row);
 }
 
+Result<void> SyncEngine::reconcile() {
+  std::string page_token;
+  Seq snapshot_seq = current_cursor(store_);
+
+  do {
+    std::string target = space_prefix() + "/snapshot?limit=1000";
+    if (!page_token.empty()) {
+      target += "&page_token=" + page_token;
+    }
+    auto response = http_.request(http::verb::get, target, {}, config_.device_token);
+    if (!response) {
+      return response.error();
+    }
+    if (response.value().status != 200) {
+      return make_error(ErrorCode::Unavailable,
+                        "snapshot request failed: " + response.value().body);
+    }
+    auto parsed = parse_body(response.value().body);
+    if (!parsed) {
+      return parsed.error();
+    }
+    snapshot_seq = Seq{parsed.value()["snapshot_seq"].get<std::int64_t>()};
+
+    for (const auto& entry : parsed.value()["entries"]) {
+      const FileId file_id{entry["file_id"].get<std::string>()};
+      auto local = store_.find_local_entry(file_id);
+      if (!local) {
+        return local.error();
+      }
+      const bool deleted = entry["deleted"].get<bool>();
+      if (!local.value().has_value() && deleted) {
+        continue;
+      }
+
+      RemoteState state;
+      state.revision = Revision{entry["revision"].get<std::int64_t>()};
+      state.deleted = deleted;
+      state.path = entry["path"].get<std::string>();
+      state.hash = optional_hash(entry, "content_hash");
+      state.size = entry["size"].get<std::int64_t>();
+
+      auto applied = apply_remote_state(file_id, state);
+      if (!applied) {
+        return applied;
+      }
+    }
+
+    if (!parsed.value().contains("next_page_token") ||
+        parsed.value()["next_page_token"].is_null()) {
+      page_token.clear();
+    } else {
+      page_token = parsed.value()["next_page_token"].get<std::string>();
+    }
+  } while (!page_token.empty());
+
+  return store_.set_cursor(snapshot_seq);
+}
+
 Result<void> SyncEngine::pull_remote() {
   auto pending = store_.list_pending_ops();
   if (!pending) {
@@ -1118,6 +1170,9 @@ Result<void> SyncEngine::pull_remote() {
         config_.device_token);
     if (!response) {
       return response.error();
+    }
+    if (response.value().status == 410) {
+      return reconcile();
     }
     if (response.value().status != 200) {
       return make_error(ErrorCode::Unavailable,

@@ -3,7 +3,7 @@
 | 项目 | 内容 |
 |---|---|
 | 报告日期 | 2026-10-27 |
-| 当前里程碑 | **M5 进行中：持续同步/WS/恢复已实现；全量核对与大文件流式未完成** |
+| 当前里程碑 | **M5 核心完成（引擎/冲突/守护/WS/恢复/核对/流式）；合并优化与跨平台验收待补** |
 | 代码状态 | core + store + fs + net + server + client（引擎/冲突/守护/WS/恢复）；全量核对未实现 |
 | 构建状态 | **可构建**：CMake 3.22 + vcpkg（storage/unicode/crypto/networking/json） |
 | 测试状态 | 67 个测试（含 HTTP/Blob/WS 集成）；Linux Debug 与 ASan/UBSan 通过 |
@@ -144,8 +144,8 @@ CI 运行（run [39631445766](https://github.com/Nix-16/SyncBox/actions/runs/396
 | 项 | 实际命令 | 实际结果 |
 |---|---|---|
 | 编译 | `cmake --build --preset dev` | 成功 |
-| 测试 | `ctest --preset dev --output-on-failure` | **78/78 通过** |
-| ASan/UBSan | `cmake --preset asan && cmake --build --preset asan && ctest --preset asan` | **78/78 通过** |
+| 测试 | `ctest --preset dev --output-on-failure` | **80/80 通过** |
+| ASan/UBSan | `cmake --preset asan && cmake --build --preset asan && ctest --preset asan` | **80/80 通过** |
 | 端到端 | `EngineTest.*` | 双客户端创建/修改/重命名/删除传播、离线队列、冲突记录 |
 
 CI 运行（run `40534858720`，提交 `bd5d830`）：**7/7 job 成功** —— Ubuntu Debug/Release、Windows Debug/Release、macOS-14 Debug/Release、ASan+UBSan，全部执行了构建与 69 个测试。

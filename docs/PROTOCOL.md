@@ -21,6 +21,7 @@
 | 协议 | HTTPS（HTTP/1.1）+ WSS |
 | 默认端口 | `8443` |
 | 编码 | 请求/响应体 `application/json; charset=utf-8`；分块上传为 `application/octet-stream` |
+| 请求体上限 | JSON 端点 1 MiB；分块上传单块 16 MiB |
 | 时间 | 所有时间字段为 Unix 毫秒（int64） |
 | 哈希 | 64 位小写十六进制 SHA-256，无前缀 |
 | ID | UUIDv7 字符串 |

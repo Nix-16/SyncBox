@@ -3,6 +3,7 @@
 #include <syncbox/client/daemon.hpp>
 #include <syncbox/client/engine.hpp>
 #include <syncbox/common/time.hpp>
+#include <syncbox/core/hash.hpp>
 #include <syncbox/core/token.hpp>
 #include <syncbox/core/uuid.hpp>
 #include <syncbox/net/http_client.hpp>
@@ -408,4 +409,45 @@ TEST_F(EngineTest, RecoverResetsInFlightOperation) {
   auto after = alice.store->list_pending_ops();
   ASSERT_TRUE(after);
   EXPECT_TRUE(after.value().empty());
+}
+
+
+TEST_F(EngineTest, ReconcileAppliesSnapshotWithoutUsingCursor) {
+  auto alice = make_client("alice", enroll("alice"));
+  auto bob = make_client("bob", enroll("bob"));
+
+  write_file(alice.root / "base.txt", "base");
+  ASSERT_TRUE(alice.engine->run_once());
+  ASSERT_TRUE(bob.engine->run_once());
+
+  write_file(alice.root / "extra.txt", "extra");
+  ASSERT_TRUE(alice.engine->run_once());
+
+  ASSERT_FALSE(std::filesystem::exists(bob.root / "extra.txt"));
+  ASSERT_TRUE(bob.engine->reconcile());
+  ASSERT_TRUE(std::filesystem::exists(bob.root / "extra.txt"));
+  EXPECT_EQ(read_file(bob.root / "extra.txt"), "extra");
+}
+
+
+TEST_F(EngineTest, PropagatesFileLargerThanOneChunk) {
+  auto alice = make_client("alice", enroll("alice"));
+  auto bob = make_client("bob", enroll("bob"));
+
+  std::string content(5 * 1024 * 1024, '\0');
+  for (std::size_t i = 0; i < content.size(); ++i) {
+    content[i] = static_cast<char>(i % 251);
+  }
+  write_file(alice.root / "large.bin", content);
+
+  ASSERT_TRUE(alice.engine->run_once());
+  ASSERT_TRUE(bob.engine->run_once());
+  ASSERT_TRUE(std::filesystem::exists(bob.root / "large.bin"));
+  EXPECT_EQ(std::filesystem::file_size(bob.root / "large.bin"), content.size());
+
+  auto expected = syncbox::sha256(content);
+  auto actual = syncbox::sha256_file(bob.root / "large.bin");
+  ASSERT_TRUE(expected);
+  ASSERT_TRUE(actual);
+  EXPECT_EQ(actual.value(), expected.value());
 }

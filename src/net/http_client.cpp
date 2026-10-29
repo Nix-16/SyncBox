@@ -5,6 +5,8 @@
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
+#include <boost/beast/http/file_body.hpp>
+#include <boost/optional.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -99,6 +101,43 @@ Result<ClientResponse> HttpClient::request(
   } catch (const std::exception& exception) {
     return make_error(ErrorCode::IoError,
                       std::string("HTTP request failed: ") + exception.what());
+  }
+}
+
+Result<unsigned> HttpClient::download_to_file(std::string_view target, std::string_view token,
+                                              const std::filesystem::path& destination) {
+  try {
+    asio::io_context io_context;
+    tcp::resolver resolver(io_context);
+    const auto endpoints = resolver.resolve(host_, port_);
+    beast::tcp_stream stream(io_context);
+    stream.connect(endpoints);
+
+    http::request<http::empty_body> request{http::verb::get, std::string(target), 11};
+    request.set(http::field::host, host_);
+    if (!token.empty()) {
+      request.set(http::field::authorization, "Bearer " + std::string(token));
+    }
+    request.prepare_payload();
+    http::write(stream, request);
+
+    beast::flat_buffer buffer;
+    http::response_parser<http::file_body> parser;
+    parser.body_limit(boost::none);
+    boost::system::error_code error;
+    parser.get().body().open(destination.c_str(), beast::file_mode::write, error);
+    if (error) {
+      return make_error(ErrorCode::IoError, "cannot open download destination");
+    }
+    http::read(stream, buffer, parser);
+    const unsigned status = parser.get().result_int();
+
+    boost::system::error_code ignored;
+    stream.socket().shutdown(tcp::socket::shutdown_both, ignored);
+    return status;
+  } catch (const std::exception& exception) {
+    return make_error(ErrorCode::IoError,
+                      std::string("HTTP download failed: ") + exception.what());
   }
 }
 
