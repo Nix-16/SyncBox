@@ -19,7 +19,8 @@ add_executable(syncbox_unit_tests
   unit/fs_debounce_test.cpp
   unit/server_api_test.cpp
   unit/op_service_test.cpp
-  unit/server_crash_test.cpp)
+  unit/server_crash_test.cpp
+  unit/engine_test.cpp)
 
 target_link_libraries(syncbox_unit_tests
   PRIVATE
@@ -27,6 +28,7 @@ target_link_libraries(syncbox_unit_tests
     syncbox_store
     syncbox_fs
     syncbox_server
+    syncbox_client
     GTest::gtest_main)
 
 syncbox_set_warnings(syncbox_unit_tests)

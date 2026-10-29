@@ -92,6 +92,9 @@ class ClientStore {
   [[nodiscard]] Result<std::optional<LocalEntryRow>> find_local_entry_by_path_key(
       std::string_view path_key);
   [[nodiscard]] Result<std::vector<LocalEntryRow>> list_local_entries(bool include_deleted);
+  [[nodiscard]] Result<void> delete_local_entry(const FileId& file_id);
+  [[nodiscard]] Result<void> update_local_entry_file_id(const FileId& old_id,
+                                                        const FileId& new_id);
 
   [[nodiscard]] Result<void> enqueue_pending_op(const PendingOpRow& op);
   [[nodiscard]] Result<std::vector<PendingOpRow>> list_pending_ops(

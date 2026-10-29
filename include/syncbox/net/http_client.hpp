@@ -1,0 +1,41 @@
+#pragma once
+
+#include <syncbox/core/result.hpp>
+
+#include <boost/beast/http/verb.hpp>
+
+#include <map>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+namespace syncbox::net {
+
+struct ClientResponse {
+  unsigned status = 0;
+  std::string body;
+  std::map<std::string, std::string> headers;
+};
+
+// Minimal synchronous HTTP/1.1 client used by the sync engine. TLS is
+// scheduled for M6; only http:// URLs are accepted here.
+class HttpClient {
+ public:
+  explicit HttpClient(std::string base_url);
+
+  [[nodiscard]] Result<ClientResponse> request(
+      boost::beast::http::verb method, std::string_view target,
+      std::string_view body = {}, std::string_view token = {},
+      std::vector<std::pair<std::string, std::string>> headers = {});
+
+  [[nodiscard]] const std::string& base_url() const noexcept { return base_url_; }
+
+ private:
+  std::string base_url_;
+  std::string host_;
+  std::string port_;
+  std::string prefix_;
+};
+
+}  // namespace syncbox::net

@@ -131,6 +131,7 @@ syncbox_set_warnings(syncbox_fs)
 # Networking: asynchronous HTTP server (Boost.Beast).
 # ---------------------------------------------------------------------------
 add_library(syncbox_net STATIC
+  src/net/http_client.cpp
   src/net/http_server.cpp
   src/net/ws_hub.cpp)
 
@@ -172,10 +173,29 @@ target_link_libraries(syncbox_server
 syncbox_set_warnings(syncbox_server)
 
 # ---------------------------------------------------------------------------
+# Client sync engine.
+# ---------------------------------------------------------------------------
+add_library(syncbox_client STATIC
+  src/client/engine.cpp)
+
+target_include_directories(syncbox_client
+  PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+target_link_libraries(syncbox_client
+  PUBLIC
+    syncbox_core
+    syncbox_store
+    syncbox_fs
+    syncbox_net)
+
+syncbox_set_warnings(syncbox_client)
+
+# ---------------------------------------------------------------------------
 # Executables
 # ---------------------------------------------------------------------------
 add_executable(syncbox apps/syncbox/main.cpp)
-target_link_libraries(syncbox PRIVATE syncbox_core)
+target_link_libraries(syncbox PRIVATE syncbox_client syncbox_store syncbox_core)
 syncbox_set_warnings(syncbox)
 
 add_executable(syncboxd apps/syncboxd/main.cpp)

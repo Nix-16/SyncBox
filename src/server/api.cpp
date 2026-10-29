@@ -508,7 +508,9 @@ net::HttpResponse Api::handle(const net::HttpRequest& request) {
         if (body.contains("size") && !body["size"].is_null()) {
           commit.size = body["size"].get<std::int64_t>();
         }
-        commit.mtime_ms = body.value("mtime_ms", 0LL);
+        if (body.contains("mtime_ms") && !body["mtime_ms"].is_null()) {
+          commit.mtime_ms = body["mtime_ms"].get<std::int64_t>();
+        }
         commit.client_seq = Seq{body.value("client_seq", 0LL)};
         commit.conflict = body.value("conflict", false);
 

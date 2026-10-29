@@ -304,6 +304,36 @@ Result<std::vector<LocalEntryRow>> ClientStore::list_local_entries(bool include_
   return entries;
 }
 
+Result<void> ClientStore::delete_local_entry(const FileId& file_id) {
+  auto statement = Statement::prepare(db_, "DELETE FROM local_entries WHERE file_id=?;");
+  if (!statement) {
+    return statement.error();
+  }
+  auto& stmt = statement.value();
+  if (auto r = stmt.bind_text(1, file_id.value); !r) return r.error();
+  auto step = stmt.step();
+  if (!step) {
+    return step.error();
+  }
+  return Result<void>{};
+}
+
+Result<void> ClientStore::update_local_entry_file_id(const FileId& old_id,
+                                                     const FileId& new_id) {
+  auto statement = Statement::prepare(db_, "UPDATE local_entries SET file_id=? WHERE file_id=?;");
+  if (!statement) {
+    return statement.error();
+  }
+  auto& stmt = statement.value();
+  if (auto r = stmt.bind_text(1, new_id.value); !r) return r.error();
+  if (auto r = stmt.bind_text(2, old_id.value); !r) return r.error();
+  auto step = stmt.step();
+  if (!step) {
+    return step.error();
+  }
+  return Result<void>{};
+}
+
 Result<void> ClientStore::enqueue_pending_op(const PendingOpRow& op) {
   auto statement = Statement::prepare(
       db_,
