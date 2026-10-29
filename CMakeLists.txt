@@ -133,6 +133,7 @@ syncbox_set_warnings(syncbox_fs)
 add_library(syncbox_net STATIC
   src/net/http_client.cpp
   src/net/http_server.cpp
+  src/net/ws_client.cpp
   src/net/ws_hub.cpp)
 
 target_include_directories(syncbox_net
@@ -176,6 +177,7 @@ syncbox_set_warnings(syncbox_server)
 # Client sync engine.
 # ---------------------------------------------------------------------------
 add_library(syncbox_client STATIC
+  src/client/daemon.cpp
   src/client/engine.cpp)
 
 target_include_directories(syncbox_client

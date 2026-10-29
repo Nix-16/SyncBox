@@ -33,6 +33,7 @@ class SyncEngine {
   SyncEngine(EngineConfig config, ClientStore& store);
 
   [[nodiscard]] Result<void> run_once();
+  [[nodiscard]] Result<void> recover();
 
   [[nodiscard]] Result<void> scan_local_changes();
   [[nodiscard]] Result<void> push_pending();

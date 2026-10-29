@@ -1,3 +1,4 @@
+#include <syncbox/client/daemon.hpp>
 #include <syncbox/client/engine.hpp>
 #include <syncbox/common/time.hpp>
 #include <syncbox/core/version.hpp>
@@ -7,6 +8,8 @@
 
 #include <boost/beast/http/verb.hpp>
 
+#include <chrono>
+#include <csignal>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -14,11 +17,18 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
 
 namespace http = boost::beast::http;
+
+volatile std::sig_atomic_t g_stop = 0;
+
+void handle_signal(int) {
+  g_stop = 1;
+}
 
 struct Config {
   std::string server;
@@ -119,6 +129,7 @@ struct Arguments {
       << "  syncbox login --server URL --token TOKEN [--root DIR] [--config PATH]\n"
       << "  syncbox sync [--config PATH] [--server URL] [--token TOKEN] [--root DIR]\n"
       << "                [--space ID] [--db PATH]\n"
+      << "  syncbox watch [--config PATH] [--poll SECONDS]\n"
       << "  syncbox status [--config PATH] [--db PATH]\n"
       << "  syncbox conflicts [--config PATH] [--db PATH]\n"
       << "  syncbox --version\n";
@@ -243,6 +254,58 @@ int run_sync(const Arguments& arguments) {
   return 0;
 }
 
+int run_watch(const Arguments& arguments) {
+  auto config = resolve_config(arguments);
+  if (!config.has_value()) {
+    return fail("watch requires server, token, and root (see `syncbox login`)");
+  }
+
+  std::error_code error;
+  std::filesystem::create_directories(config->root, error);
+  const auto db_path = database_path(config->root, option(arguments, "--db"));
+  std::filesystem::create_directories(db_path.parent_path(), error);
+
+  auto store = syncbox::ClientStore::open(db_path.string());
+  if (!store) {
+    return fail(store.error().message);
+  }
+  auto migrated = store.value().migrate();
+  if (!migrated) {
+    return fail(migrated.error().message);
+  }
+
+  int poll_seconds = 30;
+  if (const auto value = option(arguments, "--poll"); !value.empty()) {
+    try {
+      poll_seconds = std::stoi(value);
+    } catch (const std::exception&) {
+      return fail("invalid --poll value");
+    }
+  }
+
+  syncbox::client::EngineConfig engine_config;
+  engine_config.root = config->root;
+  engine_config.server_url = config->server;
+  engine_config.device_token = config->token;
+  engine_config.space_id = config->space_id;
+
+  syncbox::client::SyncDaemon daemon(engine_config, store.value(),
+                                     std::chrono::seconds(poll_seconds));
+  auto started = daemon.start();
+  if (!started) {
+    return fail(started.error().message);
+  }
+  std::cout << "watching " << config->root << " (poll " << poll_seconds << "s)\n";
+
+  std::signal(SIGINT, handle_signal);
+  std::signal(SIGTERM, handle_signal);
+  while (g_stop == 0) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  }
+  daemon.stop();
+  return 0;
+}
+
 int run_status(const Arguments& arguments) {
   auto config = resolve_config(arguments);
   std::string root = config.has_value() ? config->root : option(arguments, "--root", ".");
@@ -323,6 +386,9 @@ int main(int argc, char** argv) {
   }
   if (arguments.command == "sync") {
     return run_sync(arguments);
+  }
+  if (arguments.command == "watch") {
+    return run_watch(arguments);
   }
   if (arguments.command == "status") {
     return run_status(arguments);

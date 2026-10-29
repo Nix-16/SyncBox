@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <syncbox/client/daemon.hpp>
 #include <syncbox/client/engine.hpp>
 #include <syncbox/common/time.hpp>
 #include <syncbox/core/token.hpp>
@@ -13,11 +14,13 @@
 
 #include <boost/beast/http/verb.hpp>
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 
 #include "test_support.hpp"
 
@@ -304,4 +307,105 @@ TEST_F(EngineTest, ConflictingCreatesBecomeConflictCopies) {
   auto alice_copy = find_conflict_copy(alice.root, "same");
   ASSERT_TRUE(alice_copy.has_value());
   EXPECT_EQ(read_file(*alice_copy), "from-bob");
+}
+
+
+TEST_F(EngineTest, DaemonPollsRemoteChanges) {
+  auto alice = make_client("alice", enroll("alice"));
+
+  const std::string bob_token = enroll("bob");
+  const auto bob_root = directory_.path() / "bob-daemon";
+  std::filesystem::create_directories(bob_root);
+  auto bob_store = syncbox::ClientStore::open(directory_.file("bob-daemon.db").string());
+  ASSERT_TRUE(bob_store);
+  ASSERT_TRUE(bob_store.value().migrate());
+
+  syncbox::client::EngineConfig config;
+  config.root = bob_root.string();
+  config.server_url = base_url_;
+  config.device_token = bob_token;
+  config.space_id = space_id_;
+
+  syncbox::client::SyncDaemon daemon(config, bob_store.value(),
+                                     std::chrono::milliseconds(200));
+  ASSERT_TRUE(daemon.start());
+
+  write_file(alice.root / "pushed.txt", "from-alice");
+  ASSERT_TRUE(alice.engine->run_once());
+
+  bool arrived = false;
+  for (int attempt = 0; attempt < 200 && !arrived; ++attempt) {
+    if (std::filesystem::exists(bob_root / "pushed.txt") &&
+        read_file(bob_root / "pushed.txt") == "from-alice") {
+      arrived = true;
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+  }
+  EXPECT_TRUE(arrived) << daemon.last_error();
+  daemon.stop();
+}
+
+
+TEST_F(EngineTest, DaemonReceivesWebSocketHints) {
+  auto alice = make_client("alice", enroll("alice"));
+
+  const std::string bob_token = enroll("bob");
+  const auto bob_root = directory_.path() / "bob-ws";
+  std::filesystem::create_directories(bob_root);
+  auto bob_store = syncbox::ClientStore::open(directory_.file("bob-ws.db").string());
+  ASSERT_TRUE(bob_store);
+  ASSERT_TRUE(bob_store.value().migrate());
+
+  syncbox::client::EngineConfig config;
+  config.root = bob_root.string();
+  config.server_url = base_url_;
+  config.device_token = bob_token;
+  config.space_id = space_id_;
+
+  // Deliberately long poll interval: only the WebSocket hint can trigger sync.
+  syncbox::client::SyncDaemon daemon(config, bob_store.value(),
+                                     std::chrono::seconds(30));
+  ASSERT_TRUE(daemon.start());
+  ASSERT_TRUE(daemon.wait_connected(std::chrono::seconds(3)));
+
+  write_file(alice.root / "ws.txt", "hint");
+  ASSERT_TRUE(alice.engine->run_once());
+
+  bool arrived = false;
+  for (int attempt = 0; attempt < 200 && !arrived; ++attempt) {
+    if (std::filesystem::exists(bob_root / "ws.txt") &&
+        read_file(bob_root / "ws.txt") == "hint") {
+      arrived = true;
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+  }
+  EXPECT_TRUE(arrived) << daemon.last_error();
+  daemon.stop();
+}
+
+
+TEST_F(EngineTest, RecoverResetsInFlightOperation) {
+  auto alice = make_client("alice", enroll("alice"), "http://127.0.0.1:1");
+  write_file(alice.root / "recovered.txt", "recover-me");
+  EXPECT_FALSE(alice.engine->run_once());
+
+  auto pending = alice.store->list_pending_ops();
+  ASSERT_TRUE(pending);
+  ASSERT_EQ(pending.value().size(), 1U);
+  ASSERT_TRUE(alice.store->update_pending_state(pending.value().front().op_id, "committing",
+                                                std::nullopt, std::nullopt));
+
+  syncbox::client::EngineConfig config;
+  config.root = alice.root.string();
+  config.server_url = base_url_;
+  config.device_token = enroll("alice-online");
+  config.space_id = space_id_;
+  auto online = std::make_unique<syncbox::client::SyncEngine>(config, *alice.store);
+  ASSERT_TRUE(online->run_once());
+
+  auto after = alice.store->list_pending_ops();
+  ASSERT_TRUE(after);
+  EXPECT_TRUE(after.value().empty());
 }

@@ -82,7 +82,37 @@ std::string SyncEngine::space_prefix() const {
   return "/v1/spaces/" + config_.space_id;
 }
 
+Result<void> SyncEngine::recover() {
+  auto pending = store_.list_pending_ops();
+  if (!pending) {
+    return pending.error();
+  }
+  for (const auto& op : pending.value()) {
+    if (op.state == "uploading" || op.state == "committing") {
+      (void)store_.update_pending_state(op.op_id, "retry", "recovered after restart",
+                                       now_millis());
+    }
+  }
+
+  auto journal = store_.list_incomplete_apply_journal();
+  if (!journal) {
+    return journal.error();
+  }
+  for (const auto& row : journal.value()) {
+    std::error_code ignored;
+    if (!row.temp_path.empty()) {
+      std::filesystem::remove(row.temp_path, ignored);
+    }
+    (void)store_.update_apply_journal_state(row.id, "failed");
+  }
+  return Result<void>{};
+}
+
 Result<void> SyncEngine::run_once() {
+  auto recovered = recover();
+  if (!recovered) {
+    return recovered;
+  }
   auto scanned = scan_local_changes();
   if (!scanned) {
     return scanned;
