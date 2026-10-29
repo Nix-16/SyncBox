@@ -451,3 +451,65 @@ TEST_F(EngineTest, PropagatesFileLargerThanOneChunk) {
   ASSERT_TRUE(actual);
   EXPECT_EQ(actual.value(), expected.value());
 }
+
+
+TEST_F(EngineTest, RenameMergesWithRemoteContentChange) {
+  auto alice = make_client("alice", enroll("alice"));
+  auto bob = make_client("bob", enroll("bob"));
+
+  write_file(alice.root / "doc.txt", "base");
+  ASSERT_TRUE(alice.engine->run_once());
+  ASSERT_TRUE(bob.engine->run_once());
+
+  write_file(alice.root / "doc.txt", "updated-content");
+  std::filesystem::rename(bob.root / "doc.txt", bob.root / "renamed.txt");
+
+  ASSERT_TRUE(alice.engine->run_once());
+  ASSERT_TRUE(bob.engine->run_once());
+  ASSERT_TRUE(bob.engine->run_once());
+  ASSERT_TRUE(alice.engine->run_once());
+
+  ASSERT_TRUE(std::filesystem::exists(alice.root / "renamed.txt"));
+  ASSERT_TRUE(std::filesystem::exists(bob.root / "renamed.txt"));
+  EXPECT_EQ(read_file(alice.root / "renamed.txt"), "updated-content");
+  EXPECT_FALSE(find_conflict_copy(bob.root, "doc").has_value());
+  EXPECT_FALSE(find_conflict_copy(bob.root, "renamed").has_value());
+}
+
+TEST_F(EngineTest, ConflictingRenamesAdoptRemotePath) {
+  auto alice = make_client("alice", enroll("alice"));
+  auto bob = make_client("bob", enroll("bob"));
+
+  write_file(alice.root / "doc.txt", "same-content");
+  ASSERT_TRUE(alice.engine->run_once());
+  ASSERT_TRUE(bob.engine->run_once());
+
+  std::filesystem::rename(alice.root / "doc.txt", alice.root / "alice-name.txt");
+  std::filesystem::rename(bob.root / "doc.txt", bob.root / "bob-name.txt");
+
+  ASSERT_TRUE(alice.engine->run_once());
+  ASSERT_TRUE(bob.engine->run_once());
+
+  EXPECT_TRUE(std::filesystem::exists(bob.root / "alice-name.txt"));
+  EXPECT_FALSE(std::filesystem::exists(bob.root / "bob-name.txt"));
+  EXPECT_EQ(read_file(bob.root / "alice-name.txt"), "same-content");
+  EXPECT_FALSE(find_conflict_copy(bob.root, "bob-name").has_value());
+}
+
+TEST_F(EngineTest, IdenticalConcurrentCreatesShareTheRemoteFile) {
+  auto alice = make_client("alice", enroll("alice"));
+  auto bob = make_client("bob", enroll("bob"));
+
+  write_file(alice.root / "same.txt", "identical");
+  write_file(bob.root / "same.txt", "identical");
+
+  ASSERT_TRUE(alice.engine->run_once());
+  ASSERT_TRUE(bob.engine->run_once());
+
+  ASSERT_TRUE(std::filesystem::exists(bob.root / "same.txt"));
+  EXPECT_EQ(read_file(bob.root / "same.txt"), "identical");
+  EXPECT_FALSE(find_conflict_copy(bob.root, "same").has_value());
+  auto conflicts = bob.store->list_unresolved_conflicts();
+  ASSERT_TRUE(conflicts);
+  EXPECT_TRUE(conflicts.value().empty());
+}

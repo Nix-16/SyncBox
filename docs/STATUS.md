@@ -144,8 +144,8 @@ CI 运行（run [39631445766](https://github.com/Nix-16/SyncBox/actions/runs/396
 | 项 | 实际命令 | 实际结果 |
 |---|---|---|
 | 编译 | `cmake --build --preset dev` | 成功 |
-| 测试 | `ctest --preset dev --output-on-failure` | **80/80 通过** |
-| ASan/UBSan | `cmake --preset asan && cmake --build --preset asan && ctest --preset asan` | **80/80 通过** |
+| 测试 | `ctest --preset dev --output-on-failure` | **83/83 通过** |
+| ASan/UBSan | `cmake --preset asan && cmake --build --preset asan && ctest --preset asan` | **83/83 通过** |
 | 端到端 | `EngineTest.*` | 双客户端创建/修改/重命名/删除传播、离线队列、冲突记录 |
 
 CI 运行（run `40534858720`，提交 `bd5d830`）：**7/7 job 成功** —— Ubuntu Debug/Release、Windows Debug/Release、macOS-14 Debug/Release、ASan+UBSan，全部执行了构建与 69 个测试。

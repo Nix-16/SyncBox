@@ -717,6 +717,77 @@ Result<void> SyncEngine::handle_conflict(const PendingOpRow& op,
     return Result<void>{};
   }
 
+  if (op.kind == OpKind::Rename) {
+    auto local_entry = store_.find_local_entry(file_id);
+    if (!local_entry || !local_entry.value().has_value()) {
+      return make_error(ErrorCode::Internal, "local entry is missing during rename conflict");
+    }
+    LocalEntryRow row = *local_entry.value();
+
+    if (state.hash.has_value() && row.content_hash.has_value() &&
+        state.hash.value() == row.content_hash.value()) {
+      // P-N: both sides renamed; the remote path wins, content is identical.
+      const auto source = std::filesystem::path(config_.root) / row.path;
+      const auto destination = std::filesystem::path(config_.root) / state.path;
+      std::error_code error;
+      std::filesystem::create_directories(destination.parent_path(), error);
+      if (source != destination) {
+        std::filesystem::rename(source, destination, error);
+        if (error) {
+          std::filesystem::copy_file(source, destination,
+                                     std::filesystem::copy_options::overwrite_existing, error);
+          if (error) {
+            return make_error(ErrorCode::IoError, "cannot adopt the remote rename");
+          }
+          std::filesystem::remove(source, error);
+        }
+      }
+      row.path = state.path;
+      row.path_key = make_path_key(state.path).value();
+      row.server_revision = state.revision;
+      row.dirty = false;
+      row.updated_at = now_millis();
+      (void)store_.delete_pending_op(op.op_id);
+      auto stored = store_.upsert_local_entry(row);
+      if (!stored) {
+        return stored;
+      }
+      record_conflict("rename_conflict", file_id.value, row.path, state.path,
+                      "remote_wins", error_body.dump());
+      return Result<void>{};
+    }
+
+    // P-M: the remote changed content while we renamed; merge both.
+    if (!state.hash.has_value()) {
+      return make_error(ErrorCode::Internal, "remote rename conflict has no content hash");
+    }
+    const auto target = std::filesystem::path(config_.root) / op.path;
+    auto downloaded = download_blob(state.hash->to_hex(), target);
+    if (!downloaded) {
+      return downloaded;
+    }
+    row.path = op.path;
+    row.path_key = make_path_key(op.path).value();
+    row.content_hash = state.hash;
+    row.size = state.size;
+    row.server_revision = state.revision;
+    row.dirty = false;
+    row.updated_at = now_millis();
+    (void)store_.delete_pending_op(op.op_id);
+    auto stored = store_.upsert_local_entry(row);
+    if (!stored) {
+      return stored;
+    }
+    auto queued = enqueue(OpId{generate_uuid_v7()}, OpKind::Rename, file_id,
+                          state.revision, op.path, std::nullopt);
+    if (!queued) {
+      return queued;
+    }
+    record_conflict("rename_conflict", file_id.value, op.path, state.path, "remote_wins",
+                    error_body.dump());
+    return Result<void>{};
+  }
+
   if (op.content_hash.has_value() && state.hash.has_value() &&
       op.content_hash.value() == state.hash.value()) {
     (void)store_.delete_pending_op(op.op_id);
@@ -774,6 +845,70 @@ Result<void> SyncEngine::handle_conflict(const PendingOpRow& op,
 
 Result<void> SyncEngine::handle_create_collision(const PendingOpRow& op,
                                                  const nlohmann::json& error_body) {
+  if (error_body.contains("error") && error_body["error"].contains("details")) {
+    const auto& details = error_body["error"]["details"];
+    const nlohmann::json* current_ptr = nullptr;
+    if (details.contains("current")) {
+      current_ptr = &details["current"];
+    } else if (details.contains("entry")) {
+      current_ptr = &details["entry"];
+    }
+    if (current_ptr == nullptr) {
+      // fall through to the conflict-copy path
+    } else {
+    const auto& current = *current_ptr;
+    const auto remote_hash = optional_hash(current, "content_hash");
+    if (op.content_hash.has_value() && remote_hash.has_value() &&
+        op.content_hash.value() == remote_hash.value() &&
+        op.size.value_or(0) == current["size"].get<std::int64_t>()) {
+      const FileId remote_id{current["file_id"].get<std::string>()};
+      const std::string remote_path = current["path"].get<std::string>();
+      const FileId temporary{"local:" + op.op_id.value};
+      auto previous = store_.find_local_entry(temporary);
+
+      const auto source = std::filesystem::path(config_.root) / op.path;
+      const auto destination = std::filesystem::path(config_.root) / remote_path;
+      if (source != destination) {
+        std::error_code error;
+        std::filesystem::create_directories(destination.parent_path(), error);
+        std::filesystem::rename(source, destination, error);
+        if (error) {
+          std::filesystem::copy_file(source, destination,
+                                     std::filesystem::copy_options::overwrite_existing, error);
+          if (error) {
+            return make_error(ErrorCode::IoError, "cannot adopt the remote create");
+          }
+          std::filesystem::remove(source, error);
+        }
+      }
+
+      LocalEntryRow row;
+      row.file_id = remote_id;
+      row.path = remote_path;
+      row.path_key = make_path_key(remote_path).value();
+      row.server_revision = Revision{current["revision"].get<std::int64_t>()};
+      row.content_hash = remote_hash;
+      row.size = current["size"].get<std::int64_t>();
+      row.deleted = false;
+      row.dirty = false;
+      row.applied_seq = current_cursor(store_);
+      row.updated_at = now_millis();
+      if (previous && previous.value().has_value()) {
+        row.mtime_ms = previous.value()->mtime_ms;
+        row.fs_ino = previous.value()->fs_ino;
+        row.fs_dev = previous.value()->fs_dev;
+      }
+      (void)store_.delete_local_entry(temporary);
+      auto stored = store_.upsert_local_entry(row);
+      if (!stored) {
+        return stored;
+      }
+      (void)store_.delete_pending_op(op.op_id);
+      return Result<void>{};
+    }
+    }
+  }
+
   auto content = content_for_op(op);
   if (!content) {
     return content.error();
