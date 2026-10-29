@@ -189,6 +189,8 @@ TEST_F(EngineTest, OfflineQueueIsPersistedAndPushedLater) {
   ASSERT_TRUE(pending);
   ASSERT_EQ(pending.value().size(), 1U);
   EXPECT_EQ(pending.value().front().state, "retry");
+  ASSERT_TRUE(alice.store->update_pending_state(pending.value().front().op_id, "retry",
+                                                std::nullopt, 0));
 
   syncbox::client::EngineConfig config;
   config.root = alice.root.string();
@@ -196,7 +198,10 @@ TEST_F(EngineTest, OfflineQueueIsPersistedAndPushedLater) {
   config.device_token = enroll("alice-online");
   config.space_id = space_id_;
   auto online = std::make_unique<syncbox::client::SyncEngine>(config, *alice.store);
-  ASSERT_TRUE(online->run_once());
+  auto online_result = online->run_once();
+  ASSERT_TRUE(online_result)
+      << syncbox::to_string(online_result.error().code) << ": "
+      << online_result.error().message;
 
   auto after = alice.store->list_pending_ops();
   ASSERT_TRUE(after);
@@ -404,7 +409,10 @@ TEST_F(EngineTest, RecoverResetsInFlightOperation) {
   config.device_token = enroll("alice-online");
   config.space_id = space_id_;
   auto online = std::make_unique<syncbox::client::SyncEngine>(config, *alice.store);
-  ASSERT_TRUE(online->run_once());
+  auto online_result = online->run_once();
+  ASSERT_TRUE(online_result)
+      << syncbox::to_string(online_result.error().code) << ": "
+      << online_result.error().message;
 
   auto after = alice.store->list_pending_ops();
   ASSERT_TRUE(after);
@@ -512,4 +520,41 @@ TEST_F(EngineTest, IdenticalConcurrentCreatesShareTheRemoteFile) {
   auto conflicts = bob.store->list_unresolved_conflicts();
   ASSERT_TRUE(conflicts);
   EXPECT_TRUE(conflicts.value().empty());
+}
+
+
+TEST_F(EngineTest, RetryBackoffDelaysTheNextAttempt) {
+  auto alice = make_client("alice", enroll("alice"), "http://127.0.0.1:1");
+  write_file(alice.root / "retry.txt", "retry-me");
+  EXPECT_FALSE(alice.engine->run_once());
+
+  auto pending = alice.store->list_pending_ops();
+  ASSERT_TRUE(pending);
+  ASSERT_EQ(pending.value().size(), 1U);
+  EXPECT_EQ(pending.value().front().state, "retry");
+  EXPECT_EQ(pending.value().front().attempts, 1);
+  ASSERT_TRUE(pending.value().front().next_attempt_at.has_value());
+  EXPECT_GT(pending.value().front().next_attempt_at.value(),
+            syncbox::now_millis());
+
+  syncbox::client::EngineConfig config;
+  config.root = alice.root.string();
+  config.server_url = base_url_;
+  config.device_token = enroll("alice-online");
+  config.space_id = space_id_;
+  auto online = std::make_unique<syncbox::client::SyncEngine>(config, *alice.store);
+
+  // Still inside the backoff window: the operation must not be attempted.
+  ASSERT_TRUE(online->run_once());
+  auto still_pending = alice.store->list_pending_ops();
+  ASSERT_TRUE(still_pending);
+  EXPECT_EQ(still_pending.value().size(), 1U);
+
+  // Simulate time passing by clearing the next attempt timestamp.
+  ASSERT_TRUE(alice.store->update_pending_state(pending.value().front().op_id, "retry",
+                                                std::nullopt, 0));
+  ASSERT_TRUE(online->run_once());
+  auto after = alice.store->list_pending_ops();
+  ASSERT_TRUE(after);
+  EXPECT_TRUE(after.value().empty());
 }

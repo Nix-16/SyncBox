@@ -102,6 +102,8 @@ class ClientStore {
   [[nodiscard]] Result<void> update_pending_state(const OpId& op_id, std::string_view state,
                                                   std::optional<std::string> last_error,
                                                   std::optional<std::int64_t> next_attempt_at);
+  [[nodiscard]] Result<void> update_pending_retry(const OpId& op_id, std::string_view last_error,
+                                                  std::int64_t next_attempt_at);
   [[nodiscard]] Result<void> delete_pending_op(const OpId& op_id);
 
   [[nodiscard]] Result<std::int64_t> insert_apply_journal(const ApplyJournalRow& row);

@@ -47,6 +47,16 @@ constexpr std::size_t kCopyBlock = 64 * 1024;
   return ContentHash::from_hex(value[field].get<std::string>());
 }
 
+[[nodiscard]] std::int64_t backoff_delay_ms(int attempts) {
+  const int shift = std::min(std::max(attempts, 0), 6);
+  return std::min<std::int64_t>(60000, static_cast<std::int64_t>(1000) << shift);
+}
+
+void schedule_retry(ClientStore& store, const OpId& op_id, int attempts,
+                    const std::string& error) {
+  (void)store.update_pending_retry(op_id, error, now_millis() + backoff_delay_ms(attempts));
+}
+
 [[nodiscard]] Seq current_cursor(ClientStore& store) {
   auto cursor = store.cursor();
   return cursor ? cursor.value() : Seq{0};
@@ -75,7 +85,9 @@ constexpr std::size_t kCopyBlock = 64 * 1024;
 }  // namespace
 
 SyncEngine::SyncEngine(EngineConfig config, ClientStore& store)
-    : config_(std::move(config)), store_(store), http_(config_.server_url),
+    : config_(std::move(config)), store_(store),
+      http_(config_.server_url, net::TlsOptions{config_.verify_tls, config_.ca_file,
+                                                config_.tls_server_name}),
       ignore_(config_.ignore_patterns) {}
 
 std::string SyncEngine::space_prefix() const {
@@ -648,8 +660,7 @@ Result<void> SyncEngine::handle_conflict(const PendingOpRow& op,
                                          const nlohmann::json& error_body) {
   if (!error_body.contains("error") || !error_body["error"].contains("details") ||
       !error_body["error"]["details"].contains("current")) {
-    (void)store_.update_pending_state(op.op_id, "retry", "conflict without current state",
-                                     now_millis() + 1000);
+    schedule_retry(store_, op.op_id, op.attempts, "conflict without current state");
     return make_error(ErrorCode::Internal, "conflict response is missing current state");
   }
   const auto& current = error_body["error"]["details"]["current"];
@@ -965,6 +976,10 @@ Result<void> SyncEngine::push_pending() {
     if (op.state != "staged" && op.state != "retry") {
       continue;
     }
+    if (op.state == "retry" && op.next_attempt_at.has_value() &&
+        op.next_attempt_at.value() > now_millis()) {
+      continue;
+    }
 
     if (op.content_hash.has_value() && op.staged_path.has_value()) {
       StagedContent content;
@@ -973,8 +988,7 @@ Result<void> SyncEngine::push_pending() {
       content.size = op.size.value_or(0);
       auto uploaded = upload_blob(content);
       if (!uploaded) {
-        (void)store_.update_pending_state(op.op_id, "retry", uploaded.error().message,
-                                         now_millis() + 1000);
+        schedule_retry(store_, op.op_id, op.attempts, uploaded.error().message);
         return uploaded;
       }
     }
@@ -1001,8 +1015,7 @@ Result<void> SyncEngine::push_pending() {
     auto response = http_.request(http::verb::post, space_prefix() + "/ops", body.dump(),
                                   config_.device_token);
     if (!response) {
-      (void)store_.update_pending_state(op.op_id, "retry", response.error().message,
-                                       now_millis() + 1000);
+      schedule_retry(store_, op.op_id, op.attempts, response.error().message);
       return response.error();
     }
 
@@ -1105,8 +1118,7 @@ Result<void> SyncEngine::push_pending() {
                                          std::nullopt);
         continue;
       }
-      (void)store_.update_pending_state(op.op_id, "retry", response.value().body,
-                                       now_millis() + 1000);
+      schedule_retry(store_, op.op_id, op.attempts, response.value().body);
       return make_error(ErrorCode::Unavailable, "operation failed: " + response.value().body);
     }
 

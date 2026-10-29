@@ -2,10 +2,13 @@
 
 #include <boost/asio/strand.hpp>
 #include <boost/beast/core.hpp>
+#include <boost/asio/ssl/stream.hpp>
+#include <boost/beast/ssl.hpp>
 #include <boost/beast/websocket.hpp>
 
 #include <exception>
 #include <optional>
+#include <type_traits>
 #include <utility>
 
 namespace syncbox::net {
@@ -18,12 +21,28 @@ namespace http = beast::http;
 
 constexpr std::size_t kMaxBodyBytes = 16 * 1024 * 1024;
 
-class Session : public std::enable_shared_from_this<Session> {
+template <typename Stream>
+class Session : public std::enable_shared_from_this<Session<Stream>> {
  public:
-  Session(asio::ip::tcp::socket socket, RequestHandler& handler)
-      : stream_(std::move(socket)), handler_(handler) {}
+  Session(Stream stream, RequestHandler& handler)
+      : stream_(std::move(stream)), handler_(handler) {}
 
-  void run() { do_read(); }
+  void run() {
+    if constexpr (std::is_same_v<Stream, beast::ssl_stream<beast::tcp_stream>>) {
+      auto self = this->shared_from_this();
+      stream_.async_handshake(
+          asio::ssl::stream_base::server,
+          [self](boost::system::error_code error) {
+            if (error) {
+              self->do_close();
+              return;
+            }
+            self->do_read();
+          });
+    } else {
+      do_read();
+    }
+  }
 
  private:
   void do_read() {
@@ -31,7 +50,7 @@ class Session : public std::enable_shared_from_this<Session> {
     parser_->body_limit(kMaxBodyBytes);
 
     http::async_read(stream_, buffer_, *parser_,
-                     [self = shared_from_this()](boost::system::error_code error,
+                     [self = this->shared_from_this()](boost::system::error_code error,
                                                  std::size_t) {
                        if (error == http::error::end_of_stream) {
                          self->do_close();
@@ -62,17 +81,27 @@ class Session : public std::enable_shared_from_this<Session> {
     }
 
     if (beast::websocket::is_upgrade(request) && target.rfind("/v1/ws", 0) == 0) {
-      auto decision = handler_.handle_upgrade(std::move(stream_), std::move(request), input);
-      if (decision.upgraded) {
+      if constexpr (std::is_same_v<Stream, beast::ssl_stream<beast::tcp_stream>>) {
+        // WSS is scheduled with the TLS follow-up; plaintext upgrade only.
+        HttpResponse rejection;
+        rejection.status = 400;
+        rejection.body =
+            R"({"error":{"code":"BAD_REQUEST","message":"WebSocket over TLS is not supported yet"}})";
+        send_response(std::move(rejection), version, false);
+        return;
+      } else {
+        auto decision = handler_.handle_upgrade(std::move(stream_), std::move(request), input);
+        if (decision.upgraded) {
+          return;
+        }
+        if (decision.rejection.status == 0) {
+          decision.rejection.status = 400;
+          decision.rejection.body =
+              R"({"error":{"code":"BAD_REQUEST","message":"websocket upgrade failed"}})";
+        }
+        send_response(std::move(decision.rejection), version, false);
         return;
       }
-      if (decision.rejection.status == 0) {
-        decision.rejection.status = 400;
-        decision.rejection.body =
-            R"({"error":{"code":"BAD_REQUEST","message":"websocket upgrade failed"}})";
-      }
-      send_response(std::move(decision.rejection), version, false);
-      return;
     }
 
     HttpResponse output;
@@ -104,7 +133,7 @@ class Session : public std::enable_shared_from_this<Session> {
 
     http::async_write(
         stream_, *response,
-        [self = shared_from_this(), response](boost::system::error_code error, std::size_t) {
+        [self = this->shared_from_this(), response](boost::system::error_code error, std::size_t) {
           if (error) {
             self->do_close();
             return;
@@ -123,7 +152,7 @@ class Session : public std::enable_shared_from_this<Session> {
                                                        ignored);
   }
 
-  beast::tcp_stream stream_;
+  Stream stream_;
   beast::flat_buffer buffer_;
   std::optional<http::request_parser<http::string_body>> parser_;
   RequestHandler& handler_;
@@ -139,12 +168,35 @@ HttpServer::HttpServer(std::string address, std::uint16_t port, RequestHandler& 
       thread_count_(thread_count),
       acceptor_(io_context_) {}
 
+HttpServer::HttpServer(std::string address, std::uint16_t port, RequestHandler& handler,
+                       TlsConfig tls, std::size_t thread_count)
+    : HttpServer(std::move(address), port, handler, thread_count) {
+  tls_ = std::move(tls);
+}
+
 HttpServer::~HttpServer() {
   stop();
 }
 
 Result<void> HttpServer::start() {
   boost::system::error_code error;
+  if (tls_.has_value()) {
+    ssl_context_ = std::make_shared<asio::ssl::context>(asio::ssl::context::tls_server);
+    ssl_context_->set_options(asio::ssl::context::default_workarounds |
+                              asio::ssl::context::no_sslv2 |
+                              asio::ssl::context::no_sslv3 |
+                              asio::ssl::context::no_tlsv1 |
+                              asio::ssl::context::no_tlsv1_1);
+    ssl_context_->use_certificate_chain_file(tls_->cert_file, error);
+    if (error) {
+      return make_error(ErrorCode::IoError, "cannot load TLS certificate: " + error.message());
+    }
+    ssl_context_->use_private_key_file(tls_->key_file, asio::ssl::context::pem, error);
+    if (error) {
+      return make_error(ErrorCode::IoError, "cannot load TLS key: " + error.message());
+    }
+  }
+
   const auto address = asio::ip::make_address(address_, error);
   if (error) {
     return make_error(ErrorCode::BadRequest, "invalid listen address: " + address_);
@@ -199,7 +251,17 @@ void HttpServer::do_accept() {
   acceptor_.async_accept(io_context_, [this](boost::system::error_code error,
                                              asio::ip::tcp::socket socket) {
     if (!error) {
-      std::make_shared<Session>(std::move(socket), handler_)->run();
+      if (tls_.has_value() && ssl_context_) {
+        beast::ssl_stream<beast::tcp_stream> stream(beast::tcp_stream(std::move(socket)),
+                                                    *ssl_context_);
+        std::make_shared<Session<beast::ssl_stream<beast::tcp_stream>>>(std::move(stream),
+                                                                        handler_)
+            ->run();
+      } else {
+        std::make_shared<Session<beast::tcp_stream>>(beast::tcp_stream(std::move(socket)),
+                                                     handler_)
+            ->run();
+      }
     }
     if (!stopping_.load()) {
       do_accept();

@@ -35,6 +35,9 @@ struct Config {
   std::string token;
   std::string space_id;
   std::string root;
+  std::string ca_file;
+  bool verify_tls = true;
+  std::string tls_server_name;
 };
 
 struct Arguments {
@@ -91,6 +94,9 @@ struct Arguments {
   config.token = parsed.value("token", std::string{});
   config.space_id = parsed.value("space_id", std::string{});
   config.root = parsed.value("root", std::string{});
+  config.ca_file = parsed.value("ca_file", std::string{});
+  config.verify_tls = parsed.value("verify_tls", true);
+  config.tls_server_name = parsed.value("tls_server_name", std::string{});
   return config;
 }
 
@@ -104,7 +110,10 @@ struct Arguments {
   nlohmann::json body{{"server", config.server},
                       {"token", config.token},
                       {"space_id", config.space_id},
-                      {"root", config.root}};
+                      {"root", config.root},
+                      {"ca_file", config.ca_file},
+                      {"verify_tls", config.verify_tls},
+                      {"tls_server_name", config.tls_server_name}};
   stream << body.dump(2) << '\n';
   stream.close();
 #ifdef _WIN32
@@ -127,6 +136,7 @@ struct Arguments {
   std::cout
       << "Usage:\n"
       << "  syncbox login --server URL --token TOKEN [--root DIR] [--config PATH]\n"
+      << "                [--ca-file FILE] [--insecure] [--tls-server-name NAME]\n"
       << "  syncbox sync [--config PATH] [--server URL] [--token TOKEN] [--root DIR]\n"
       << "                [--space ID] [--db PATH]\n"
       << "  syncbox watch [--config PATH] [--poll SECONDS]\n"
@@ -144,9 +154,18 @@ struct Arguments {
   return std::filesystem::path(root) / ".syncbox" / "client.db";
 }
 
+[[nodiscard]] syncbox::net::TlsOptions tls_options_for(const Config& config) {
+  syncbox::net::TlsOptions options;
+  options.verify = config.verify_tls;
+  options.ca_file = config.ca_file;
+  options.server_name = config.tls_server_name;
+  return options;
+}
+
 [[nodiscard]] std::optional<std::string> fetch_space_id(const std::string& server,
-                                                        const std::string& token) {
-  syncbox::net::HttpClient client(server);
+                                                        const std::string& token,
+                                                        const Config& config) {
+  syncbox::net::HttpClient client(server, tls_options_for(config));
   auto response = client.request(http::verb::get, "/v1/me", {}, token);
   if (!response || response.value().status != 200) {
     return std::nullopt;
@@ -163,10 +182,13 @@ int run_login(const Arguments& arguments) {
   config.server = option(arguments, "--server");
   config.token = option(arguments, "--token");
   config.root = option(arguments, "--root", ".");
+  config.ca_file = option(arguments, "--ca-file");
+  config.verify_tls = arguments.options.count("--insecure") == 0;
+  config.tls_server_name = option(arguments, "--tls-server-name");
   if (config.server.empty() || config.token.empty()) {
     return fail("login requires --server and --token");
   }
-  auto space = fetch_space_id(config.server, config.token);
+  auto space = fetch_space_id(config.server, config.token, config);
   if (!space.has_value()) {
     return fail("could not authenticate with the server");
   }
@@ -201,11 +223,20 @@ int run_login(const Arguments& arguments) {
   if (arguments.options.count("--space") != 0) {
     config.space_id = option(arguments, "--space");
   }
+  if (arguments.options.count("--ca-file") != 0) {
+    config.ca_file = option(arguments, "--ca-file");
+  }
+  if (arguments.options.count("--insecure") != 0) {
+    config.verify_tls = false;
+  }
+  if (arguments.options.count("--tls-server-name") != 0) {
+    config.tls_server_name = option(arguments, "--tls-server-name");
+  }
   if (config.server.empty() || config.token.empty() || config.root.empty()) {
     return std::nullopt;
   }
   if (config.space_id.empty()) {
-    auto space = fetch_space_id(config.server, config.token);
+    auto space = fetch_space_id(config.server, config.token, config);
     if (!space.has_value()) {
       return std::nullopt;
     }
@@ -243,6 +274,9 @@ int run_sync(const Arguments& arguments) {
   engine_config.server_url = config->server;
   engine_config.device_token = config->token;
   engine_config.space_id = config->space_id;
+  engine_config.verify_tls = config->verify_tls;
+  engine_config.ca_file = config->ca_file;
+  engine_config.tls_server_name = config->tls_server_name;
 
   syncbox::client::SyncEngine engine(engine_config, store.value());
   auto result = engine.run_once();
@@ -288,6 +322,9 @@ int run_watch(const Arguments& arguments) {
   engine_config.server_url = config->server;
   engine_config.device_token = config->token;
   engine_config.space_id = config->space_id;
+  engine_config.verify_tls = config->verify_tls;
+  engine_config.ca_file = config->ca_file;
+  engine_config.tls_server_name = config->tls_server_name;
 
   syncbox::client::SyncDaemon daemon(engine_config, store.value(),
                                      std::chrono::seconds(poll_seconds));

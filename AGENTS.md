@@ -15,7 +15,7 @@ SyncBox：C++17 跨平台（Windows/Linux/macOS）双向文件同步工具，中
 
 | 项 | 状态 |
 |---|---|
-| 当前里程碑 | **M5 进行中：一次性同步引擎与 CLI 已实现；冲突解决/持续监控/恢复未完成** |
+| 当前里程碑 | **M6 进行中：指数退避与 TLS 已实现；断点续传/WSS/限速未完成** |
 | 业务代码 | core + store + fs + net + server + client（scan/outbox/push/pull）；冲突解决与持续监控未实现 |
 | 构建系统 | CMake 3.22 + vcpkg manifest（storage/unicode/crypto/networking/json 已启用） |
 | 测试 | 83 个测试（含守护/WS/恢复/核对/大文件）；Linux Debug 与 ASan 通过 |

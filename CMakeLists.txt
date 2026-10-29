@@ -146,6 +146,8 @@ target_link_libraries(syncbox_net
     Boost::asio
     Boost::beast
     Boost::system
+    OpenSSL::SSL
+    OpenSSL::Crypto
   PRIVATE
     Threads::Threads
     nlohmann_json::nlohmann_json)

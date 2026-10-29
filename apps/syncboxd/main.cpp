@@ -14,6 +14,7 @@
 #include <csignal>
 #include <cstdint>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <string>
 #include <thread>
@@ -32,6 +33,8 @@ struct Options {
   std::string listen = "127.0.0.1";
   std::uint16_t port = 8443;
   std::string blob_root = "blobs";
+  std::string tls_cert;
+  std::string tls_key;
 };
 
 [[nodiscard]] std::optional<std::string> next_value(int argc, char** argv, int& index) {
@@ -46,6 +49,7 @@ int print_usage() {
   std::cout
       << "Usage:\n"
       << "  syncboxd [--db PATH] [--listen ADDR] [--port PORT]\n"
+      << "           [--blob-root PATH] [--tls-cert FILE --tls-key FILE]\n"
       << "  syncboxd admin create-space --db PATH --name NAME\n"
       << "  syncboxd admin enroll --db PATH --space SPACE_ID [--ttl-hours N]\n"
       << "  syncboxd admin revoke --db PATH --device DEVICE_ID [--reason TEXT]\n"
@@ -204,6 +208,14 @@ int run_server(int argc, char** argv) {
       auto value = next_value(argc, argv, i);
       if (!value) return fail("--blob-root needs a value");
       options.blob_root = *value;
+    } else if (argument == "--tls-cert") {
+      auto value = next_value(argc, argv, i);
+      if (!value) return fail("--tls-cert needs a value");
+      options.tls_cert = *value;
+    } else if (argument == "--tls-key") {
+      auto value = next_value(argc, argv, i);
+      if (!value) return fail("--tls-key needs a value");
+      options.tls_key = *value;
     } else {
       return fail("unknown argument: " + argument);
     }
@@ -228,20 +240,37 @@ int run_server(int argc, char** argv) {
   syncbox::server::OpService ops(store.value());
   syncbox::net::WsHub hub;
   syncbox::server::Api api(store.value(), auth, ops, blobs, hub);
-  syncbox::net::HttpServer server(options.listen, options.port, api, 2);
+  const bool loopback = options.listen == "127.0.0.1" || options.listen == "::1" ||
+                        options.listen == "localhost";
+  if (options.tls_cert.empty() != options.tls_key.empty()) {
+    return fail("--tls-cert and --tls-key must be provided together");
+  }
+  if (options.tls_cert.empty() && !loopback) {
+    return fail("refusing to serve plaintext on a non-loopback address; configure TLS");
+  }
 
-  auto started = server.start();
+  std::unique_ptr<syncbox::net::HttpServer> server;
+  if (options.tls_cert.empty()) {
+    server = std::make_unique<syncbox::net::HttpServer>(options.listen, options.port, api, 2);
+  } else {
+    server = std::make_unique<syncbox::net::HttpServer>(
+        options.listen, options.port, api,
+        syncbox::net::TlsConfig{options.tls_cert, options.tls_key}, 2);
+  }
+
+  auto started = server->start();
   if (!started) {
     return fail(started.error().message);
   }
-  std::cout << "syncboxd listening on " << options.listen << ':' << server.port() << '\n';
+  std::cout << "syncboxd listening on " << options.listen << ':' << server->port()
+            << (options.tls_cert.empty() ? " (plaintext)" : " (TLS)") << '\n';
 
   std::signal(SIGINT, handle_signal);
   std::signal(SIGTERM, handle_signal);
   while (g_stop == 0) {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
   }
-  server.stop();
+  server->stop();
   return 0;
 }
 

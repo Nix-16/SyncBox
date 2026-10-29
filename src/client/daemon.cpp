@@ -33,10 +33,12 @@ Result<void> SyncDaemon::start() {
   }
   watcher_ = std::move(watcher.value());
 
-  ws_client_ = std::make_unique<net::WsClient>(
-      config_.server_url, config_.space_id, config_.device_token,
-      [this](Seq) { request_sync(); });
-  ws_thread_ = std::thread([this] { ws_client_->run(); });
+  if (config_.server_url.rfind("http://", 0) == 0) {
+    ws_client_ = std::make_unique<net::WsClient>(
+        config_.server_url, config_.space_id, config_.device_token,
+        [this](Seq) { request_sync(); });
+    ws_thread_ = std::thread([this] { ws_client_->run(); });
+  }
 
   worker_ = std::thread([this] { worker(); });
   return Result<void>{};

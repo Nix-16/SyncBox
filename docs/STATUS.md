@@ -3,7 +3,7 @@
 | 项目 | 内容 |
 |---|---|
 | 报告日期 | 2026-10-27 |
-| 当前里程碑 | **M5 核心完成（引擎/冲突/守护/WS/恢复/核对/流式）；合并优化与跨平台验收待补** |
+| 当前里程碑 | **M6 进行中：指数退避与 TLS 已实现；断点续传/WSS/限速未完成** |
 | 代码状态 | core + store + fs + net + server + client（引擎/冲突/守护/WS/恢复）；全量核对未实现 |
 | 构建状态 | **可构建**：CMake 3.22 + vcpkg（storage/unicode/crypto/networking/json） |
 | 测试状态 | 67 个测试（含 HTTP/Blob/WS 集成）；Linux Debug 与 ASan/UBSan 通过 |
@@ -128,6 +128,17 @@ CI 运行（run [39631445766](https://github.com/Nix-16/SyncBox/actions/runs/396
 
 > 环境说明：本机访问 GitHub 被限速/中断，OpenSSL 与 utf8proc 源码通过镜像下载后放入 vcpkg 下载缓存，由 vcpkg 校验哈希后使用。该操作不改变依赖版本与 manifest。
 
+### M6 进展证据（2026-10-29，Linux aarch64）
+
+| 项 | 实际命令 | 实际结果 |
+|---|---|---|
+| 编译 | `cmake --build --preset dev` | 成功（含 OpenSSL::SSL） |
+| 测试 | `ctest --preset dev --output-on-failure` | **86/86 通过** |
+| ASan/UBSan | `cmake --preset asan && cmake --build --preset asan && ctest --preset asan` | **86/86 通过** |
+| TLS | `TlsTest.*` | CA 校验通过；不受信任证书被拒绝 |
+
+> 限制：WSS（WebSocket over TLS）尚未实现，HTTPS 客户端使用轮询兜底；服务端在 TLS 会话上拒绝 WS 升级。
+
 ### M4 进展证据（2026-10-27，Linux aarch64）
 
 | 项 | 实际命令 | 实际结果 |
@@ -144,8 +155,8 @@ CI 运行（run [39631445766](https://github.com/Nix-16/SyncBox/actions/runs/396
 | 项 | 实际命令 | 实际结果 |
 |---|---|---|
 | 编译 | `cmake --build --preset dev` | 成功 |
-| 测试 | `ctest --preset dev --output-on-failure` | **83/83 通过** |
-| ASan/UBSan | `cmake --preset asan && cmake --build --preset asan && ctest --preset asan` | **83/83 通过** |
+| 测试 | `ctest --preset dev --output-on-failure` | **86/86 通过** |
+| ASan/UBSan | `cmake --preset asan && cmake --build --preset asan && ctest --preset asan` | **86/86 通过** |
 | 端到端 | `EngineTest.*` | 双客户端创建/修改/重命名/删除传播、离线队列、冲突记录 |
 
 CI 运行（run `40534858720`，提交 `bd5d830`）：**7/7 job 成功** —— Ubuntu Debug/Release、Windows Debug/Release、macOS-14 Debug/Release、ASan+UBSan，全部执行了构建与 69 个测试。

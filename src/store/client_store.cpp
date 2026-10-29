@@ -447,6 +447,27 @@ Result<void> ClientStore::update_pending_state(const OpId& op_id, std::string_vi
   return Result<void>{};
 }
 
+Result<void> ClientStore::update_pending_retry(const OpId& op_id, std::string_view last_error,
+                                               std::int64_t next_attempt_at) {
+  auto statement = Statement::prepare(
+      db_,
+      "UPDATE pending_ops SET state='retry',last_error=?,next_attempt_at=?,"
+      "attempts=attempts+1,updated_at=? WHERE op_id=?;");
+  if (!statement) {
+    return statement.error();
+  }
+  auto& stmt = statement.value();
+  if (auto r = stmt.bind_text(1, last_error); !r) return r.error();
+  if (auto r = stmt.bind_int64(2, next_attempt_at); !r) return r.error();
+  if (auto r = stmt.bind_int64(3, now_millis()); !r) return r.error();
+  if (auto r = stmt.bind_text(4, op_id.value); !r) return r.error();
+  auto step = stmt.step();
+  if (!step) {
+    return step.error();
+  }
+  return Result<void>{};
+}
+
 Result<void> ClientStore::delete_pending_op(const OpId& op_id) {
   auto statement = Statement::prepare(db_, "DELETE FROM pending_ops WHERE op_id=?;");
   if (!statement) {

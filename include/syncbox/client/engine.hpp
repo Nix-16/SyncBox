@@ -21,6 +21,9 @@ struct EngineConfig {
   std::string device_token;
   std::string space_id;
   std::string device_id;
+  bool verify_tls = true;
+  std::string ca_file;
+  std::string tls_server_name;
   std::vector<std::string> ignore_patterns;
   std::int64_t chunk_size = 4 * 1024 * 1024;
 };

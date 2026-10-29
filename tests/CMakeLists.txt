@@ -20,7 +20,8 @@ add_executable(syncbox_unit_tests
   unit/server_api_test.cpp
   unit/op_service_test.cpp
   unit/server_crash_test.cpp
-  unit/engine_test.cpp)
+  unit/engine_test.cpp
+  unit/tls_test.cpp)
 
 target_link_libraries(syncbox_unit_tests
   PRIVATE
@@ -32,6 +33,9 @@ target_link_libraries(syncbox_unit_tests
     GTest::gtest_main)
 
 syncbox_set_warnings(syncbox_unit_tests)
+
+target_compile_definitions(syncbox_unit_tests
+  PRIVATE SYNCBOX_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
 # Helper processes used by crash tests (FI-16 prototype).
 add_executable(syncbox_crash_writer helpers/crash_writer.cpp)
