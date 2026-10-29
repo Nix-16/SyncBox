@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <array>
+#include <ctime>
 #include <fstream>
 #include <map>
 #include <set>
@@ -44,6 +45,11 @@ constexpr std::size_t kCopyBlock = 64 * 1024;
     return std::nullopt;
   }
   return ContentHash::from_hex(value[field].get<std::string>());
+}
+
+[[nodiscard]] Seq current_cursor(ClientStore& store) {
+  auto cursor = store.cursor();
+  return cursor ? cursor.value() : Seq{0};
 }
 
 [[nodiscard]] Result<std::string> read_chunk(const std::filesystem::path& path,
@@ -469,6 +475,321 @@ Result<void> SyncEngine::upload_blob(const StagedContent& content) {
   return Result<void>{};
 }
 
+Result<SyncEngine::StagedContent> SyncEngine::content_for_op(const PendingOpRow& op) {
+  if (op.staged_path.has_value() && op.content_hash.has_value()) {
+    return StagedContent{std::filesystem::path(*op.staged_path), *op.content_hash,
+                         op.size.value_or(0)};
+  }
+  if (!op.file_id.has_value()) {
+    return make_error(ErrorCode::Internal, "operation has no content source");
+  }
+  auto local = store_.find_local_entry(*op.file_id);
+  if (!local || !local.value().has_value()) {
+    return make_error(ErrorCode::Internal, "local entry is missing");
+  }
+  return stage_file(std::filesystem::path(config_.root) / local.value()->path);
+}
+
+Result<std::string> SyncEngine::conflict_copy_path(const std::string& path) {
+  const std::filesystem::path relative(path);
+  const std::string filename = relative.filename().u8string();
+  const auto dot = filename.find_last_of('.');
+  std::string stem = filename;
+  std::string extension;
+  if (dot != std::string::npos && dot != 0) {
+    stem = filename.substr(0, dot);
+    extension = filename.substr(dot);
+  }
+
+  std::string device = config_.device_id;
+  if (device.empty()) {
+    device = "device";
+  } else if (device.size() > 8) {
+    device.resize(8);
+  }
+
+  const std::time_t now = std::time(nullptr);
+  std::tm utc{};
+#ifdef _WIN32
+  gmtime_s(&utc, &now);
+#else
+  gmtime_r(&now, &utc);
+#endif
+  char stamp[32] = {};
+  std::strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", &utc);
+
+  std::string candidate =
+      stem + " (conflict " + device + " " + stamp + ")" + extension;
+  int suffix = 2;
+  std::filesystem::path result = relative.parent_path() / candidate;
+  while (std::filesystem::exists(std::filesystem::path(config_.root) / result)) {
+    candidate = stem + " (conflict " + device + " " + stamp + ")-" +
+                std::to_string(suffix) + extension;
+    result = relative.parent_path() / candidate;
+    ++suffix;
+  }
+  return result.generic_u8string();
+}
+
+Result<void> SyncEngine::copy_staged_to(const std::filesystem::path& staged,
+                                        const std::filesystem::path& target) {
+  std::error_code error;
+  std::filesystem::create_directories(target.parent_path(), error);
+  if (error) {
+    return make_error(ErrorCode::IoError, "cannot create conflict directory");
+  }
+  std::filesystem::copy_file(staged, target, std::filesystem::copy_options::overwrite_existing,
+                             error);
+  if (error) {
+    return make_error(ErrorCode::IoError, "cannot create conflict copy: " + error.message());
+  }
+  return Result<void>{};
+}
+
+void SyncEngine::record_conflict(std::string kind, std::string file_id, std::string local_path,
+                                 std::string remote_path, std::string resolution,
+                                 std::string detail) {
+  ConflictRow conflict;
+  conflict.conflict_id = generate_uuid_v7();
+  conflict.file_id = FileId{std::move(file_id)};
+  conflict.kind = std::move(kind);
+  conflict.local_path = std::move(local_path);
+  conflict.remote_path = std::move(remote_path);
+  conflict.resolution = std::move(resolution);
+  conflict.detail = std::move(detail);
+  conflict.created_at = now_millis();
+  (void)store_.insert_conflict(conflict);
+}
+
+Result<void> SyncEngine::apply_remote_state(const FileId& file_id, const RemoteState& state) {
+  auto local = store_.find_local_entry(file_id);
+  if (!local) {
+    return local.error();
+  }
+
+  const auto target = std::filesystem::path(config_.root) / state.path;
+  if (state.deleted) {
+    std::error_code error;
+    std::filesystem::remove(target, error);
+    if (local.value().has_value() && local.value()->path != state.path) {
+      std::filesystem::remove(std::filesystem::path(config_.root) / local.value()->path, error);
+    }
+  } else {
+    if (local.value().has_value() && local.value()->path != state.path) {
+      std::error_code error;
+      std::filesystem::remove(std::filesystem::path(config_.root) / local.value()->path, error);
+    }
+    if (!state.hash.has_value()) {
+      return make_error(ErrorCode::Internal, "remote entry has no content hash");
+    }
+    auto downloaded = download_blob(state.hash->to_hex(), target);
+    if (!downloaded) {
+      return downloaded;
+    }
+  }
+
+  LocalEntryRow row;
+  if (local.value().has_value()) {
+    row = *local.value();
+  } else {
+    row.file_id = file_id;
+  }
+  auto cursor = store_.cursor();
+  row.path = state.path;
+  row.path_key = make_path_key(state.path).value();
+  row.server_revision = state.revision;
+  row.content_hash = state.hash;
+  row.size = state.size;
+  row.deleted = state.deleted;
+  row.dirty = false;
+  row.applied_seq = cursor ? cursor.value() : Seq{0};
+  row.updated_at = now_millis();
+  if (!state.deleted) {
+    const auto identity = fs::file_identity(target.u8string());
+    if (identity.valid()) {
+      row.fs_ino = static_cast<std::int64_t>(identity.inode);
+      row.fs_dev = static_cast<std::int64_t>(identity.device);
+    }
+  }
+  return store_.upsert_local_entry(row);
+}
+
+Result<void> SyncEngine::handle_conflict(const PendingOpRow& op,
+                                         const nlohmann::json& error_body) {
+  if (!error_body.contains("error") || !error_body["error"].contains("details") ||
+      !error_body["error"]["details"].contains("current")) {
+    (void)store_.update_pending_state(op.op_id, "retry", "conflict without current state",
+                                     now_millis() + 1000);
+    return make_error(ErrorCode::Internal, "conflict response is missing current state");
+  }
+  const auto& current = error_body["error"]["details"]["current"];
+  RemoteState state;
+  state.revision = Revision{current["revision"].get<std::int64_t>()};
+  state.deleted = current["deleted"].get<bool>();
+  state.path = current["path"].get<std::string>();
+  state.hash = optional_hash(current, "content_hash");
+  state.size = current["size"].get<std::int64_t>();
+
+  const FileId file_id = op.file_id.value_or(FileId{"local:" + op.op_id.value});
+  const bool local_delete = op.kind == OpKind::Delete;
+
+  if (state.deleted) {
+    if (local_delete) {
+      auto removed = store_.delete_pending_op(op.op_id);
+      if (!removed) {
+        return removed.error();
+      }
+      return apply_remote_state(file_id, state);
+    }
+
+    // P-R: local modification wins; restore the file.
+    auto content = content_for_op(op);
+    if (!content) {
+      return content.error();
+    }
+    auto local_entry = store_.find_local_entry(file_id);
+    const std::string restore_path =
+        local_entry && local_entry.value().has_value() ? local_entry.value()->path : state.path;
+
+    PendingOpRow restore;
+    restore.op_id = OpId{generate_uuid_v7()};
+    restore.file_id = file_id;
+    restore.kind = OpKind::Restore;
+    restore.base_revision = state.revision;
+    restore.path = restore_path;
+    restore.content_hash = content.value().hash;
+    restore.size = content.value().size;
+    restore.staged_path = content.value().path.u8string();
+    restore.client_seq = current_cursor(store_);
+    restore.state = "staged";
+    restore.created_at = now_millis();
+    restore.updated_at = restore.created_at;
+
+    (void)store_.delete_pending_op(op.op_id);
+    auto queued = store_.enqueue_pending_op(restore);
+    if (!queued) {
+      return queued;
+    }
+    record_conflict("modify_delete", file_id.value, op.path, state.path, "restored",
+                    error_body.dump());
+    return Result<void>{};
+  }
+
+  if (local_delete) {
+    // P-D: the modification wins over the deletion.
+    (void)store_.delete_pending_op(op.op_id);
+    auto applied = apply_remote_state(file_id, state);
+    if (!applied) {
+      return applied;
+    }
+    record_conflict("modify_delete", file_id.value, op.path, state.path, "remote_wins",
+                    error_body.dump());
+    return Result<void>{};
+  }
+
+  if (op.content_hash.has_value() && state.hash.has_value() &&
+      op.content_hash.value() == state.hash.value()) {
+    (void)store_.delete_pending_op(op.op_id);
+    return apply_remote_state(file_id, state);
+  }
+
+  // P-C: keep the local content as a conflict copy, then accept the remote.
+  auto content = content_for_op(op);
+  if (!content) {
+    return content.error();
+  }
+  auto copy_path = conflict_copy_path(op.path);
+  if (!copy_path) {
+    return copy_path.error();
+  }
+  auto copied = copy_staged_to(content.value().path,
+                               std::filesystem::path(config_.root) / copy_path.value());
+  if (!copied) {
+    return copied;
+  }
+
+  const OpId copy_op_id{generate_uuid_v7()};
+  const FileId temporary{"local:" + copy_op_id.value};
+  LocalEntryRow copy_entry;
+  copy_entry.file_id = temporary;
+  copy_entry.path = copy_path.value();
+  copy_entry.path_key = make_path_key(copy_path.value()).value();
+  copy_entry.server_revision = Revision::none();
+  copy_entry.content_hash = content.value().hash;
+  copy_entry.size = content.value().size;
+  copy_entry.deleted = false;
+  copy_entry.dirty = true;
+  copy_entry.applied_seq = current_cursor(store_);
+  copy_entry.updated_at = now_millis();
+  auto inserted = store_.upsert_local_entry(copy_entry);
+  if (!inserted) {
+    return inserted.error();
+  }
+
+  (void)store_.delete_pending_op(op.op_id);
+  auto queued = enqueue(copy_op_id, OpKind::Create, temporary, Revision::none(),
+                        copy_path.value(), content.value());
+  if (!queued) {
+    return queued;
+  }
+
+  auto applied = apply_remote_state(file_id, state);
+  if (!applied) {
+    return applied;
+  }
+  record_conflict("modify_modify", file_id.value, op.path, state.path, "conflict_copy",
+                  error_body.dump());
+  return Result<void>{};
+}
+
+Result<void> SyncEngine::handle_create_collision(const PendingOpRow& op,
+                                                 const nlohmann::json& error_body) {
+  auto content = content_for_op(op);
+  if (!content) {
+    return content.error();
+  }
+  auto copy_path = conflict_copy_path(op.path);
+  if (!copy_path) {
+    return copy_path.error();
+  }
+
+  const auto source = std::filesystem::path(config_.root) / op.path;
+  const auto target = std::filesystem::path(config_.root) / copy_path.value();
+  std::error_code error;
+  std::filesystem::create_directories(target.parent_path(), error);
+  std::filesystem::rename(source, target, error);
+  if (error) {
+    auto copied = copy_staged_to(content.value().path, target);
+    if (!copied) {
+      return copied;
+    }
+    std::filesystem::remove(source, error);
+  }
+
+  const FileId old_temporary{"local:" + op.op_id.value};
+  const OpId new_op_id{generate_uuid_v7()};
+  const FileId new_temporary{"local:" + new_op_id.value};
+  (void)store_.update_local_entry_file_id(old_temporary, new_temporary);
+  auto local = store_.find_local_entry(new_temporary);
+  if (local && local.value().has_value()) {
+    LocalEntryRow row = *local.value();
+    row.path = copy_path.value();
+    row.path_key = make_path_key(copy_path.value()).value();
+    row.updated_at = now_millis();
+    (void)store_.upsert_local_entry(row);
+  }
+
+  (void)store_.delete_pending_op(op.op_id);
+  auto queued = enqueue(new_op_id, OpKind::Create, new_temporary, Revision::none(),
+                        copy_path.value(), content.value());
+  if (!queued) {
+    return queued;
+  }
+  record_conflict("path_collision", old_temporary.value, op.path, op.path, "conflict_copy",
+                  error_body.dump());
+  return Result<void>{};
+}
+
 Result<void> SyncEngine::push_pending() {
   auto pending = store_.list_pending_ops();
   if (!pending) {
@@ -593,22 +914,35 @@ Result<void> SyncEngine::push_pending() {
       if (!parsed) {
         return parsed.error();
       }
-      ConflictRow conflict;
-      conflict.conflict_id = generate_uuid_v7();
-      conflict.file_id = op.file_id.value_or(FileId{"local:" + op.op_id.value});
-      conflict.kind = op.kind == OpKind::Delete ? "modify_delete" : "modify_modify";
-      conflict.local_path = op.path;
-      if (parsed.value().contains("error") && parsed.value()["error"].contains("details") &&
-          parsed.value()["error"]["details"].contains("current")) {
-        conflict.remote_path =
-            parsed.value()["error"]["details"]["current"]["path"].get<std::string>();
+      const std::string code =
+          parsed.value().contains("error") && parsed.value()["error"].contains("code")
+              ? parsed.value()["error"]["code"].get<std::string>()
+              : std::string{};
+      if (code == "REVISION_CONFLICT") {
+        auto resolved = handle_conflict(op, parsed.value());
+        if (!resolved) {
+          return resolved;
+        }
+        continue;
       }
-      conflict.resolution = "manual_pending";
-      conflict.detail = response.value().body;
-      conflict.created_at = now_millis();
-      (void)store_.insert_conflict(conflict);
-      (void)store_.update_pending_state(op.op_id, "conflict", "revision conflict", std::nullopt);
-      continue;
+      if (code == "PATH_CASE_COLLISION" && op.kind == OpKind::Create) {
+        auto resolved = handle_create_collision(op, parsed.value());
+        if (!resolved) {
+          return resolved;
+        }
+        continue;
+      }
+      if (code == "RESURRECT_BLOCKED") {
+        record_conflict("path_collision",
+                        op.file_id.value_or(FileId{"local:" + op.op_id.value}).value, op.path,
+                        op.path, "manual_pending", response.value().body);
+        (void)store_.update_pending_state(op.op_id, "conflict", "resurrect blocked",
+                                         std::nullopt);
+        continue;
+      }
+      (void)store_.update_pending_state(op.op_id, "retry", response.value().body,
+                                       now_millis() + 1000);
+      return make_error(ErrorCode::Unavailable, "operation failed: " + response.value().body);
     }
 
     if (status == 401 || status == 403) {

@@ -36,6 +36,21 @@ void write_file(const std::filesystem::path& path, const std::string& content) {
                      std::istreambuf_iterator<char>());
 }
 
+[[nodiscard]] std::optional<std::filesystem::path> find_conflict_copy(
+    const std::filesystem::path& root, const std::string& stem) {
+  std::error_code error;
+  for (const auto& entry : std::filesystem::directory_iterator(root, error)) {
+    if (!entry.is_regular_file()) {
+      continue;
+    }
+    const std::string name = entry.path().filename().u8string();
+    if (name.find(stem + " (conflict ") == 0) {
+      return entry.path();
+    }
+  }
+  return std::nullopt;
+}
+
 }  // namespace
 
 class EngineTest : public ::testing::Test {
@@ -201,6 +216,92 @@ TEST_F(EngineTest, ConcurrentEditsProduceAConflictRecord) {
 
   auto conflicts = bob.store->list_unresolved_conflicts();
   ASSERT_TRUE(conflicts);
-  EXPECT_EQ(conflicts.value().size(), 1U);
-  EXPECT_EQ(read_file(bob.root / "shared.txt"), "bob-edit");
+  ASSERT_EQ(conflicts.value().size(), 1U);
+  EXPECT_EQ(conflicts.value().front().resolution, "conflict_copy");
+  EXPECT_EQ(read_file(bob.root / "shared.txt"), "alice-edit");
+
+  auto copy = find_conflict_copy(bob.root, "shared");
+  ASSERT_TRUE(copy.has_value());
+  EXPECT_EQ(read_file(*copy), "bob-edit");
+
+  ASSERT_TRUE(bob.engine->run_once());
+  ASSERT_TRUE(alice.engine->run_once());
+  auto alice_copy = find_conflict_copy(alice.root, "shared");
+  ASSERT_TRUE(alice_copy.has_value());
+  EXPECT_EQ(read_file(*alice_copy), "bob-edit");
+}
+
+TEST_F(EngineTest, DeleteLosesAgainstRemoteModification) {
+  auto alice = make_client("alice", enroll("alice"));
+  auto bob = make_client("bob", enroll("bob"));
+
+  write_file(alice.root / "doc.txt", "base");
+  ASSERT_TRUE(alice.engine->run_once());
+  ASSERT_TRUE(bob.engine->run_once());
+
+  std::filesystem::remove(bob.root / "doc.txt");
+  write_file(alice.root / "doc.txt", "alice-kept");
+  ASSERT_TRUE(alice.engine->run_once());
+  ASSERT_TRUE(bob.engine->run_once());
+
+  ASSERT_TRUE(std::filesystem::exists(bob.root / "doc.txt"));
+  EXPECT_EQ(read_file(bob.root / "doc.txt"), "alice-kept");
+  auto conflicts = bob.store->list_unresolved_conflicts();
+  ASSERT_TRUE(conflicts);
+  ASSERT_EQ(conflicts.value().size(), 1U);
+  EXPECT_EQ(conflicts.value().front().resolution, "remote_wins");
+}
+
+TEST_F(EngineTest, LocalModificationRestoresRemoteDeletion) {
+  auto alice = make_client("alice", enroll("alice"));
+  auto bob = make_client("bob", enroll("bob"));
+
+  write_file(alice.root / "keep.txt", "base");
+  ASSERT_TRUE(alice.engine->run_once());
+  ASSERT_TRUE(bob.engine->run_once());
+
+  std::filesystem::remove(alice.root / "keep.txt");
+  write_file(bob.root / "keep.txt", "bob-kept");
+  ASSERT_TRUE(alice.engine->run_once());
+  ASSERT_TRUE(bob.engine->run_once());
+
+  ASSERT_TRUE(std::filesystem::exists(bob.root / "keep.txt"));
+  EXPECT_EQ(read_file(bob.root / "keep.txt"), "bob-kept");
+  auto conflicts = bob.store->list_unresolved_conflicts();
+  ASSERT_TRUE(conflicts);
+  ASSERT_EQ(conflicts.value().size(), 1U);
+  EXPECT_EQ(conflicts.value().front().resolution, "restored");
+
+  ASSERT_TRUE(bob.engine->run_once());
+  ASSERT_TRUE(alice.engine->run_once());
+  ASSERT_TRUE(std::filesystem::exists(alice.root / "keep.txt"));
+  EXPECT_EQ(read_file(alice.root / "keep.txt"), "bob-kept");
+}
+
+TEST_F(EngineTest, ConflictingCreatesBecomeConflictCopies) {
+  auto alice = make_client("alice", enroll("alice"));
+  auto bob = make_client("bob", enroll("bob"));
+
+  write_file(alice.root / "same.txt", "from-alice");
+  write_file(bob.root / "same.txt", "from-bob");
+
+  ASSERT_TRUE(alice.engine->run_once());
+  ASSERT_TRUE(bob.engine->run_once());
+
+  ASSERT_TRUE(std::filesystem::exists(bob.root / "same.txt"));
+  EXPECT_EQ(read_file(bob.root / "same.txt"), "from-alice");
+  auto copy = find_conflict_copy(bob.root, "same");
+  ASSERT_TRUE(copy.has_value());
+  EXPECT_EQ(read_file(*copy), "from-bob");
+
+  auto conflicts = bob.store->list_unresolved_conflicts();
+  ASSERT_TRUE(conflicts);
+  ASSERT_EQ(conflicts.value().size(), 1U);
+  EXPECT_EQ(conflicts.value().front().kind, "path_collision");
+
+  ASSERT_TRUE(bob.engine->run_once());
+  ASSERT_TRUE(alice.engine->run_once());
+  auto alice_copy = find_conflict_copy(alice.root, "same");
+  ASSERT_TRUE(alice_copy.has_value());
+  EXPECT_EQ(read_file(*alice_copy), "from-bob");
 }

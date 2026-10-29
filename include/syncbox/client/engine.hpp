@@ -20,6 +20,7 @@ struct EngineConfig {
   std::string server_url;
   std::string device_token;
   std::string space_id;
+  std::string device_id;
   std::vector<std::string> ignore_patterns;
   std::int64_t chunk_size = 4 * 1024 * 1024;
 };
@@ -49,7 +50,27 @@ class SyncEngine {
   [[nodiscard]] Result<void> enqueue(const OpId& op_id, OpKind kind, const FileId& file_id,
                                      Revision base, std::string path,
                                      std::optional<StagedContent> content);
+  struct RemoteState {
+    Revision revision;
+    bool deleted = false;
+    std::string path;
+    std::optional<ContentHash> hash;
+    std::int64_t size = 0;
+  };
+
+  [[nodiscard]] Result<StagedContent> content_for_op(const PendingOpRow& op);
+  [[nodiscard]] Result<void> handle_conflict(const PendingOpRow& op,
+                                             const nlohmann::json& error_body);
+  [[nodiscard]] Result<void> handle_create_collision(const PendingOpRow& op,
+                                                     const nlohmann::json& error_body);
+  [[nodiscard]] Result<void> apply_remote_state(const FileId& file_id,
+                                                const RemoteState& state);
   [[nodiscard]] Result<void> apply_change(const nlohmann::json& change, Seq seq);
+  [[nodiscard]] Result<std::string> conflict_copy_path(const std::string& path);
+  [[nodiscard]] Result<void> copy_staged_to(const std::filesystem::path& staged,
+                                            const std::filesystem::path& target);
+  void record_conflict(std::string kind, std::string file_id, std::string local_path,
+                       std::string remote_path, std::string resolution, std::string detail);
   [[nodiscard]] Result<void> download_blob(const std::string& hash_hex,
                                            const std::filesystem::path& target);
   [[nodiscard]] std::string space_prefix() const;
