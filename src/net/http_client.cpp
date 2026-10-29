@@ -125,7 +125,8 @@ Result<unsigned> HttpClient::download_to_file(std::string_view target, std::stri
     http::response_parser<http::file_body> parser;
     parser.body_limit(boost::none);
     boost::system::error_code error;
-    parser.get().body().open(destination.c_str(), beast::file_mode::write, error);
+    const std::string native_path = destination.u8string();
+    parser.get().body().open(native_path.c_str(), beast::file_mode::write, error);
     if (error) {
       return make_error(ErrorCode::IoError, "cannot open download destination");
     }
