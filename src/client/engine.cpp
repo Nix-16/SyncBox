@@ -11,11 +11,15 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <ctime>
 #include <fstream>
 #include <map>
+#include <mutex>
+#include <optional>
 #include <set>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -482,8 +486,12 @@ Result<void> SyncEngine::upload_blob(const StagedContent& content) {
   if (!init_body) {
     return init_body.error();
   }
+  std::vector<int> missing;
   for (const auto& index : init_body.value()["missing_chunks"]) {
-    const int chunk_index = index.get<int>();
+    missing.push_back(index.get<int>());
+  }
+
+  auto upload_chunk = [&](int chunk_index) -> Result<void> {
     const std::int64_t offset = static_cast<std::int64_t>(chunk_index) * chunk_size;
     const std::int64_t length =
         std::min(chunk_size, std::max<std::int64_t>(0, content.size - offset));
@@ -491,7 +499,13 @@ Result<void> SyncEngine::upload_blob(const StagedContent& content) {
     if (!data) {
       return data.error();
     }
-    auto uploaded = http_.request(
+
+    // HttpClient holds no mutable connection state, but each worker gets its
+    // own instance to keep TLS contexts and sockets independent.
+    net::HttpClient client(config_.server_url,
+                           net::TlsOptions{config_.verify_tls, config_.ca_file,
+                                           config_.tls_server_name});
+    auto uploaded = client.request(
         http::verb::put,
         "/v1/blobs/" + content.hash.to_hex() + "/chunks/" + std::to_string(chunk_index),
         data.value(), config_.device_token,
@@ -502,6 +516,53 @@ Result<void> SyncEngine::upload_blob(const StagedContent& content) {
     }
     if (uploaded.value().status != 204) {
       return make_error(ErrorCode::Unavailable, "chunk upload failed");
+    }
+    return Result<void>{};
+  };
+
+  const int configured = std::max(1, config_.chunk_parallelism);
+  const int workers =
+      std::min<int>(configured, static_cast<int>(std::max<std::size_t>(1, missing.size())));
+
+  if (workers <= 1) {
+    for (const int index : missing) {
+      auto uploaded = upload_chunk(index);
+      if (!uploaded) {
+        return uploaded.error();
+      }
+    }
+  } else {
+    std::atomic<std::size_t> next{0};
+    std::atomic<bool> failed{false};
+    std::mutex error_mutex;
+    std::optional<Error> first_error;
+
+    std::vector<std::thread> threads;
+    threads.reserve(static_cast<std::size_t>(workers));
+    for (int worker = 0; worker < workers; ++worker) {
+      threads.emplace_back([&] {
+        while (!failed.load(std::memory_order_relaxed)) {
+          const std::size_t slot = next.fetch_add(1, std::memory_order_relaxed);
+          if (slot >= missing.size()) {
+            return;
+          }
+          auto uploaded = upload_chunk(missing[slot]);
+          if (!uploaded) {
+            std::lock_guard<std::mutex> lock(error_mutex);
+            if (!first_error.has_value()) {
+              first_error = uploaded.error();
+            }
+            failed.store(true, std::memory_order_relaxed);
+            return;
+          }
+        }
+      });
+    }
+    for (auto& thread : threads) {
+      thread.join();
+    }
+    if (first_error.has_value()) {
+      return *first_error;
     }
   }
 
@@ -624,7 +685,7 @@ Result<void> SyncEngine::apply_remote_state(const FileId& file_id, const RemoteS
     if (!state.hash.has_value()) {
       return make_error(ErrorCode::Internal, "remote entry has no content hash");
     }
-    auto downloaded = download_blob(state.hash->to_hex(), target);
+    auto downloaded = download_blob(state.hash->to_hex(), state.size, target);
     if (!downloaded) {
       return downloaded;
     }
@@ -773,7 +834,7 @@ Result<void> SyncEngine::handle_conflict(const PendingOpRow& op,
       return make_error(ErrorCode::Internal, "remote rename conflict has no content hash");
     }
     const auto target = std::filesystem::path(config_.root) / op.path;
-    auto downloaded = download_blob(state.hash->to_hex(), target);
+    auto downloaded = download_blob(state.hash->to_hex(), state.size, target);
     if (!downloaded) {
       return downloaded;
     }
@@ -1137,6 +1198,7 @@ Result<void> SyncEngine::push_pending() {
 }
 
 Result<void> SyncEngine::download_blob(const std::string& hash_hex,
+                                       std::int64_t expected_size,
                                        const std::filesystem::path& target) {
   std::error_code error;
   std::filesystem::create_directories(target.parent_path(), error);
@@ -1144,38 +1206,88 @@ Result<void> SyncEngine::download_blob(const std::string& hash_hex,
     return make_error(ErrorCode::IoError, "cannot create target directory");
   }
 
-  auto temp = fs::create_temp_file(config_.root);
-  if (!temp) {
-    return temp.error();
+  const auto part_directory = std::filesystem::path(config_.root) / ".syncbox" / "tmp";
+  std::filesystem::create_directories(part_directory, error);
+  if (error) {
+    return make_error(ErrorCode::IoError, "cannot create download directory");
+  }
+  // Stable per-content path so an interrupted download can be resumed on the
+  // next attempt (PROTOCOL.md section 3.9.5, M6).
+  const auto part = part_directory / ("download-" + hash_hex + ".part");
+
+  for (int attempt = 0; attempt < 2; ++attempt) {
+    std::int64_t offset = 0;
+    std::error_code part_error;
+    if (std::filesystem::exists(part, part_error)) {
+      offset = static_cast<std::int64_t>(std::filesystem::file_size(part, part_error));
+      if (part_error || (expected_size >= 0 && offset > expected_size)) {
+        std::filesystem::remove(part, part_error);
+        part_error.clear();
+        offset = 0;
+      }
+    }
+
+    if (expected_size >= 0 && offset == expected_size) {
+      auto existing = sha256_file(part);
+      if (existing && existing.value().to_hex() == hash_hex) {
+        auto synced = fs::sync_file(part);
+        if (!synced) {
+          std::filesystem::remove(part, part_error);
+          return synced;
+        }
+        return fs::atomic_replace(target, part);
+      }
+      std::filesystem::remove(part, part_error);
+      part_error.clear();
+      offset = 0;
+    }
+
+    auto status = http_.download_to_file("/v1/blobs/" + hash_hex, config_.device_token, part,
+                                         offset);
+    if (!status) {
+      // Keep the partial file: the next run (or retry) resumes from its size.
+      return status.error();
+    }
+
+    if (status.value() == 200 && offset > 0) {
+      // The server ignored the Range header and appended a full body.
+      std::filesystem::remove(part, part_error);
+      continue;
+    }
+    if (status.value() != 200 && status.value() != 206) {
+      std::filesystem::remove(part, part_error);
+      return make_error(ErrorCode::Unavailable, "blob download failed");
+    }
+
+    const auto downloaded_size = std::filesystem::file_size(part, part_error);
+    if (part_error || (expected_size >= 0 &&
+                       static_cast<std::int64_t>(downloaded_size) != expected_size)) {
+      // Truncated stream: keep the bytes for the next resume attempt.
+      return make_error(ErrorCode::Unavailable, "incomplete blob download");
+    }
+
+    auto digest = sha256_file(part);
+    if (!digest) {
+      std::filesystem::remove(part, part_error);
+      return digest.error();
+    }
+    if (digest.value().to_hex() != hash_hex) {
+      std::filesystem::remove(part, part_error);
+      if (attempt == 0) {
+        continue;  // retry once from scratch
+      }
+      return make_error(ErrorCode::BlobHashMismatch, "downloaded blob hash mismatch");
+    }
+
+    auto synced = fs::sync_file(part);
+    if (!synced) {
+      std::filesystem::remove(part, part_error);
+      return synced;
+    }
+    return fs::atomic_replace(target, part);
   }
 
-  auto status = http_.download_to_file("/v1/blobs/" + hash_hex, config_.device_token,
-                                       temp.value());
-  if (!status) {
-    std::filesystem::remove(temp.value(), error);
-    return status.error();
-  }
-  if (status.value() != 200) {
-    std::filesystem::remove(temp.value(), error);
-    return make_error(ErrorCode::Unavailable, "blob download failed");
-  }
-
-  auto digest = sha256_file(temp.value());
-  if (!digest) {
-    std::filesystem::remove(temp.value(), error);
-    return digest.error();
-  }
-  if (digest.value().to_hex() != hash_hex) {
-    std::filesystem::remove(temp.value(), error);
-    return make_error(ErrorCode::BlobHashMismatch, "downloaded blob hash mismatch");
-  }
-
-  auto synced = fs::sync_file(temp.value());
-  if (!synced) {
-    std::filesystem::remove(temp.value(), error);
-    return synced;
-  }
-  return fs::atomic_replace(target, temp.value());
+  return make_error(ErrorCode::BlobHashMismatch, "downloaded blob hash mismatch");
 }
 
 Result<void> SyncEngine::apply_change(const nlohmann::json& change, Seq seq) {
@@ -1203,7 +1315,7 @@ Result<void> SyncEngine::apply_change(const nlohmann::json& change, Seq seq) {
     if (!hash.has_value()) {
       return make_error(ErrorCode::Internal, "change is missing content_hash");
     }
-    auto downloaded = download_blob(hash->to_hex(), target);
+    auto downloaded = download_blob(hash->to_hex(), size, target);
     if (!downloaded) {
       return downloaded;
     }

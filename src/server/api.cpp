@@ -189,48 +189,74 @@ struct ParsedTarget {
 
 }  // namespace
 
+Result<Api::UpgradeContext> Api::validate_upgrade(const net::HttpRequest& metadata) {
+  const ParsedTarget target = parse_target(metadata.target);
+
+  if (target.path != "/v1/ws") {
+    return make_error(ErrorCode::NotFound, "route not found");
+  }
+  const auto space_it = target.query.find("space_id");
+  if (space_it == target.query.end()) {
+    return make_error(ErrorCode::BadRequest, "space_id is required");
+  }
+  const std::string& space_id = space_it->second;
+
+  const auto token = bearer_token(metadata);
+  if (!token.has_value()) {
+    return make_error(ErrorCode::AuthRequired, "missing bearer token");
+  }
+  auto device = auth_.authenticate(*token);
+  if (!device) {
+    return device.error();
+  }
+  if (device.value().space_id != space_id) {
+    return make_error(ErrorCode::SpaceForbidden,
+                      "device does not belong to this space");
+  }
+  auto latest = store_.latest_seq(space_id);
+  if (!latest) {
+    return latest.error();
+  }
+  return UpgradeContext{space_id, latest.value()};
+}
+
 net::UpgradeResult Api::handle_upgrade(
     boost::beast::tcp_stream&& stream,
     boost::beast::http::request<boost::beast::http::string_body>&& request,
     const net::HttpRequest& metadata) {
   std::lock_guard<std::mutex> lock(mutex_);
   net::UpgradeResult result;
-  const ParsedTarget target = parse_target(metadata.target);
 
-  if (target.path != "/v1/ws") {
-    result.rejection = error_response(ErrorCode::NotFound, "route not found");
-    return result;
-  }
-  const auto space_it = target.query.find("space_id");
-  if (space_it == target.query.end()) {
-    result.rejection = error_response(ErrorCode::BadRequest, "space_id is required");
-    return result;
-  }
-  const std::string& space_id = space_it->second;
-
-  const auto token = bearer_token(metadata);
-  if (!token.has_value()) {
-    result.rejection = error_response(ErrorCode::AuthRequired, "missing bearer token");
-    return result;
-  }
-  auto device = auth_.authenticate(*token);
-  if (!device) {
-    result.rejection = error_response(device.error());
-    return result;
-  }
-  if (device.value().space_id != space_id) {
-    result.rejection =
-        error_response(ErrorCode::SpaceForbidden, "device does not belong to this space");
-    return result;
-  }
-  auto latest = store_.latest_seq(space_id);
-  if (!latest) {
-    result.rejection = error_response(latest.error());
+  auto context = validate_upgrade(metadata);
+  if (!context) {
+    result.rejection = error_response(context.error());
     return result;
   }
 
-  auto session = std::make_shared<net::WsSession>(std::move(stream), hub_, space_id,
-                                                  latest.value());
+  auto session = std::make_shared<net::WsSession<boost::beast::tcp_stream>>(
+      std::move(stream), hub_, context.value().space_id, context.value().seq);
+  hub_.add(session);
+  session->run(std::move(request));
+  result.upgraded = true;
+  return result;
+}
+
+net::UpgradeResult Api::handle_upgrade(
+    boost::beast::ssl_stream<boost::beast::tcp_stream>&& stream,
+    boost::beast::http::request<boost::beast::http::string_body>&& request,
+    const net::HttpRequest& metadata) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  net::UpgradeResult result;
+
+  auto context = validate_upgrade(metadata);
+  if (!context) {
+    result.rejection = error_response(context.error());
+    return result;
+  }
+
+  auto session =
+      std::make_shared<net::WsSession<boost::beast::ssl_stream<boost::beast::tcp_stream>>>(
+          std::move(stream), hub_, context.value().space_id, context.value().seq);
   hub_.add(session);
   session->run(std::move(request));
   result.upgraded = true;

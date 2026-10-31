@@ -23,9 +23,21 @@ class Api final : public net::RequestHandler {
       boost::beast::http::request<boost::beast::http::string_body>&& request,
       const net::HttpRequest& metadata) override;
 
+  [[nodiscard]] net::UpgradeResult handle_upgrade(
+      boost::beast::ssl_stream<boost::beast::tcp_stream>&& stream,
+      boost::beast::http::request<boost::beast::http::string_body>&& request,
+      const net::HttpRequest& metadata) override;
+
   [[nodiscard]] net::HttpResponse handle(const net::HttpRequest& request) override;
 
  private:
+  struct UpgradeContext {
+    std::string space_id;
+    Seq seq;
+  };
+
+  [[nodiscard]] Result<UpgradeContext> validate_upgrade(const net::HttpRequest& metadata);
+
   ServerStore& store_;
   AuthService& auth_;
   OpService& ops_;

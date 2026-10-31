@@ -7,6 +7,7 @@
 #include <boost/asio/ssl/context.hpp>
 #include <boost/beast/core/tcp_stream.hpp>
 #include <boost/beast/http.hpp>
+#include <boost/beast/ssl.hpp>
 
 #include <atomic>
 #include <cstdint>
@@ -49,6 +50,17 @@ class RequestHandler {
   // sent as a normal HTTP response.
   virtual UpgradeResult handle_upgrade(
       boost::beast::tcp_stream&& stream,
+      boost::beast::http::request<boost::beast::http::string_body>&& request,
+      const HttpRequest& metadata) {
+    (void)stream;
+    (void)request;
+    (void)metadata;
+    return UpgradeResult{};
+  }
+
+  // Same, for WebSocket over TLS (wss://).
+  virtual UpgradeResult handle_upgrade(
+      boost::beast::ssl_stream<boost::beast::tcp_stream>&& stream,
       boost::beast::http::request<boost::beast::http::string_body>&& request,
       const HttpRequest& metadata) {
     (void)stream;

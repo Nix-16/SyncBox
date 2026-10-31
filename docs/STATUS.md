@@ -3,10 +3,10 @@
 | 项目 | 内容 |
 |---|---|
 | 报告日期 | 2026-10-27 |
-| 当前里程碑 | **M6 进行中：指数退避与 TLS 已实现；断点续传/WSS/限速未完成** |
-| 代码状态 | core + store + fs + net + server + client（引擎/冲突/守护/WS/恢复）；全量核对未实现 |
+| 当前里程碑 | **M6 进行中：退避、TLS、断点续传、WSS、并发分块已完成；限速/证书固定待完成** |
+| 代码状态 | core + store + fs + net + server + client（引擎/冲突/守护/WS/恢复/核对）；GUI 未实现 |
 | 构建状态 | **可构建**：CMake 3.22 + vcpkg（storage/unicode/crypto/networking/json） |
-| 测试状态 | 67 个测试（含 HTTP/Blob/WS 集成）；Linux Debug 与 ASan/UBSan 通过 |
+| 测试状态 | 91 个测试（含 HTTP/Blob/TLS/WSS/引擎集成）；Linux Debug 与 ASan/UBSan 通过；三平台 CI 待运行 |
 | 版本控制 | Git 已初始化，远端 `github.com/Nix-16/SyncBox` |
 
 > 本文档是项目真实状态的唯一依据。任何“已完成”的声明必须在此处有对应条目与证据（文件路径、命令输出、测试名称）。**当前没有任何同步功能可用。**
@@ -67,24 +67,24 @@ Git 仓库已初始化（`main` 分支），远端 `origin` 指向 `github.com/N
 
 | 需求 | 功能 | 设计 | 实现 | 测试 | 结论 |
 |---|---|---|---|---|---|
-| FR-01 | 设备注册与配置 | ✅ PRD/SECURITY/PROTOCOL | ❌ | ❌ | 未实现 |
-| FR-02 | 中心服务器通信 | ✅ ARCHITECTURE/PROTOCOL | ❌ | ❌ | 未实现 |
-| FR-03 | 文件监控与索引 | ✅ ARCHITECTURE §4.1 | ❌ | ❌ | 未实现 |
-| FR-04 | 双向同步（增改删重命名） | ✅ CONFLICTS | ❌ | ❌ | 未实现 |
-| FR-05 | 元数据持久化 | ✅ DATABASE | ⚠️ schema + Repository | ✅ UT-DB | 部分实现（无同步引擎使用） |
-| FR-06 | 版本管理与幂等 | ✅ CONFLICTS/PROTOCOL | ⚠️ 模型与约束 | ✅ 模型/幂等约束测试 | 部分实现（服务端 CAS 未实现） |
-| FR-07 | 变更日志与游标 | ✅ DATABASE/PROTOCOL | ⚠️ 日志表与游标 | ✅ seq/游标测试 | 部分实现（拉取端点未实现） |
-| FR-08 | 冲突检测与副本 | ✅ CONFLICTS | ❌ | ❌ | 未实现 |
-| FR-09 | 分块、校验、续传、重试 | ✅ PROTOCOL §3.9 | ❌ | ❌ | 未实现 |
-| FR-10 | 持久化队列与恢复 | ✅ DATABASE §3.2/ARCH §3.3 | ❌ | ❌ | 未实现 |
-| FR-11 | 临时文件与安全替换 | ✅ ARCHITECTURE §4.7 | ❌ | ❌ | 未实现 |
-| FR-12 | 三平台文件系统适配 | ✅ ARCHITECTURE §2 | ❌ | ❌ | 未实现 |
+| FR-01 | 设备注册与配置 | ✅ PRD/SECURITY/PROTOCOL | ✅ enroll + 管理 CLI | ✅ 集成 | 已实现 |
+| FR-02 | 中心服务器通信 | ✅ ARCHITECTURE/PROTOCOL | ✅ HTTP/WS/WSS | ✅ 集成 | 已实现 |
+| FR-03 | 文件监控与索引 | ✅ ARCHITECTURE §4.1 | ✅ 三平台 watcher + 扫描 | ✅ 单元/集成 | 已实现 |
+| FR-04 | 双向同步（增改删重命名） | ✅ CONFLICTS | ✅ 引擎 push/pull/apply | ✅ 集成 | 已实现 |
+| FR-05 | 元数据持久化 | ✅ DATABASE | ✅ 两库 schema/Repo | ✅ UT-DB | 已实现 |
+| FR-06 | 版本管理与幂等 | ✅ CONFLICTS/PROTOCOL | ✅ 服务端 CAS + 幂等 | ✅ 集成 | 已实现 |
+| FR-07 | 变更日志与游标 | ✅ DATABASE/PROTOCOL | ✅ changes/snapshot/ack | ✅ 集成 | 已实现 |
+| FR-08 | 冲突检测与副本 | ✅ CONFLICTS | ✅ 冲突副本/删除策略/恢复 | ✅ 集成 | 已实现 |
+| FR-09 | 分块、校验、续传、重试 | ✅ PROTOCOL §3.9 | ✅ 分块/校验/Range 续传/退避 | ✅ 单元/集成 | 已实现 |
+| FR-10 | 持久化队列与恢复 | ✅ DATABASE §3.2/ARCH §3.3 | ✅ outbox/恢复/守护 | ✅ 集成 | 已实现 |
+| FR-11 | 临时文件与安全替换 | ✅ ARCHITECTURE §4.7 | ✅ 原子替换/fsync | ✅ 单元 | 已实现 |
+| FR-12 | 三平台文件系统适配 | ✅ ARCHITECTURE §2 | ✅ Linux/Windows/macOS | ✅ CI（上一提交） | 已实现 |
 | FR-13 | Qt 桌面界面 | ✅ ROADMAP M7（概要） | ❌ | ❌ | 未实现 |
-| FR-14 | 认证/TLS/路径安全/撤销 | ✅ SECURITY | ❌ | ❌ | 未实现 |
-| FR-15 | 测试体系 | ✅ TEST_PLAN | ⚠️ 34 个单元测试 | ✅ 单元层 | 部分实现（无集成/性能测试） |
-| FR-16 | 构建/文档/演示 | ✅ 部分（M0 文档） | ⚠️ 构建骨架 | ✅ 34 项 | 部分实现（无演示） |
+| FR-14 | 认证/TLS/路径安全/撤销 | ✅ SECURITY | ⚠️ 认证/TLS/路径/撤销已实现 | ⚠️ 部分 | 部分实现（限流/审计未完成） |
+| FR-15 | 测试体系 | ✅ TEST_PLAN | ⚠️ 91 个单元/集成测试 | ⚠️ 部分 | 部分实现（故障注入/性能未完整） |
+| FR-16 | 构建/文档/演示 | ✅ 部分（M0 文档） | ⚠️ 构建完整 | ✅ 91 项 | 部分实现（无演示/GUI） |
 
-**没有任何同步功能可以声称“可用”。**
+**核心同步功能已实现并通过本地测试；Qt GUI（M7）、限速与部分安全/性能验收尚未完成。**
 
 ---
 
@@ -128,16 +128,22 @@ CI 运行（run [39631445766](https://github.com/Nix-16/SyncBox/actions/runs/396
 
 > 环境说明：本机访问 GitHub 被限速/中断，OpenSSL 与 utf8proc 源码通过镜像下载后放入 vcpkg 下载缓存，由 vcpkg 校验哈希后使用。该操作不改变依赖版本与 manifest。
 
-### M6 进展证据（2026-10-29，Linux aarch64）
+### M6 进展证据（2026-10-31，Linux aarch64）
 
 | 项 | 实际命令 | 实际结果 |
 |---|---|---|
-| 编译 | `cmake --build --preset dev` | 成功（含 OpenSSL::SSL） |
-| 测试 | `ctest --preset dev --output-on-failure` | **86/86 通过** |
-| ASan/UBSan | `cmake --preset asan && cmake --build --preset asan && ctest --preset asan` | **86/86 通过** |
-| TLS | `TlsTest.*` | CA 校验通过；不受信任证书被拒绝 |
+| 编译 | `cmake --build --preset dev` | 成功（Boost.Asio/Beast + OpenSSL::SSL） |
+| 测试 | `ctest --preset dev --output-on-failure` | **91/91 通过**（连续 5 次无失败） |
+| ASan/UBSan | `cmake --preset asan && cmake --build --preset asan && ctest --preset asan` | **91/91 通过** |
+| TLS | `TlsTest.ServesHealthOverTlsWithCaVerification` | CA 校验通过 |
+| TLS 失败关闭 | `TlsTest.RejectsUntrustedCertificate` | 不受信任证书被拒绝，未降级 |
+| WSS | `TlsTest.WebSocketOverTlsDeliversChanges` | TLS 上的 WS 升级并收到 change 提示 |
+| Range 续传 | `HttpClientTest.ResumesWithRangeAndAppends` | 发送 `Range: bytes=4-`，返回 206 并追加 |
+| 引擎续传 | `EngineTest.ResumesInterruptedDownloadFromPartialFile` | 半截 `.part` 续传，最终哈希一致 |
+| 并发分块 | `EngineTest.UploadsMultipleChunksWithBoundedParallelism` | 10 块、4 并发，内容一致 |
 
-> 限制：WSS（WebSocket over TLS）尚未实现，HTTPS 客户端使用轮询兜底；服务端在 TLS 会话上拒绝 WS 升级。
+> 尚未完成：客户端限速/带宽配置、证书固定（pinning）、FI-06..10 全量故障注入、PF-02 基准测量。
+> 中断 3 次的连续续传仅以“预置半截文件”方式验证，未做真实断链注入。
 
 ### M4 进展证据（2026-10-27，Linux aarch64）
 

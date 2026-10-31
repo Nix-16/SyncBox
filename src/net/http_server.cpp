@@ -81,27 +81,17 @@ class Session : public std::enable_shared_from_this<Session<Stream>> {
     }
 
     if (beast::websocket::is_upgrade(request) && target.rfind("/v1/ws", 0) == 0) {
-      if constexpr (std::is_same_v<Stream, beast::ssl_stream<beast::tcp_stream>>) {
-        // WSS is scheduled with the TLS follow-up; plaintext upgrade only.
-        HttpResponse rejection;
-        rejection.status = 400;
-        rejection.body =
-            R"({"error":{"code":"BAD_REQUEST","message":"WebSocket over TLS is not supported yet"}})";
-        send_response(std::move(rejection), version, false);
-        return;
-      } else {
-        auto decision = handler_.handle_upgrade(std::move(stream_), std::move(request), input);
-        if (decision.upgraded) {
-          return;
-        }
-        if (decision.rejection.status == 0) {
-          decision.rejection.status = 400;
-          decision.rejection.body =
-              R"({"error":{"code":"BAD_REQUEST","message":"websocket upgrade failed"}})";
-        }
-        send_response(std::move(decision.rejection), version, false);
+      auto decision = handler_.handle_upgrade(std::move(stream_), std::move(request), input);
+      if (decision.upgraded) {
         return;
       }
+      if (decision.rejection.status == 0) {
+        decision.rejection.status = 400;
+        decision.rejection.body =
+            R"({"error":{"code":"BAD_REQUEST","message":"websocket upgrade failed"}})";
+      }
+      send_response(std::move(decision.rejection), version, false);
+      return;
     }
 
     HttpResponse output;

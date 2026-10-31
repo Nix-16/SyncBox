@@ -26,6 +26,8 @@ struct EngineConfig {
   std::string tls_server_name;
   std::vector<std::string> ignore_patterns;
   std::int64_t chunk_size = 4 * 1024 * 1024;
+  // Number of chunks uploaded concurrently (PROTOCOL.md M6 backpressure).
+  int chunk_parallelism = 4;
 };
 
 // Single-shot synchronization engine (M5). Each call to run_once() scans the
@@ -77,6 +79,7 @@ class SyncEngine {
   void record_conflict(std::string kind, std::string file_id, std::string local_path,
                        std::string remote_path, std::string resolution, std::string detail);
   [[nodiscard]] Result<void> download_blob(const std::string& hash_hex,
+                                           std::int64_t expected_size,
                                            const std::filesystem::path& target);
   [[nodiscard]] std::string space_prefix() const;
 

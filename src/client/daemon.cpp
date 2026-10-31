@@ -33,10 +33,16 @@ Result<void> SyncDaemon::start() {
   }
   watcher_ = std::move(watcher.value());
 
-  if (config_.server_url.rfind("http://", 0) == 0) {
+  const bool http_like = config_.server_url.rfind("http://", 0) == 0 ||
+                         config_.server_url.rfind("https://", 0) == 0;
+  if (http_like) {
+    net::TlsOptions tls;
+    tls.verify = config_.verify_tls;
+    tls.ca_file = config_.ca_file;
+    tls.server_name = config_.tls_server_name;
     ws_client_ = std::make_unique<net::WsClient>(
         config_.server_url, config_.space_id, config_.device_token,
-        [this](Seq) { request_sync(); });
+        [this](Seq) { request_sync(); }, tls);
     ws_thread_ = std::thread([this] { ws_client_->run(); });
   }
 

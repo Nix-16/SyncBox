@@ -1,6 +1,7 @@
 #pragma once
 
 #include <syncbox/core/version_model.hpp>
+#include <syncbox/net/http_client.hpp>
 
 #include <chrono>
 #include <condition_variable>
@@ -19,7 +20,7 @@ class WsClient {
   using ChangeCallback = std::function<void(Seq)>;
 
   WsClient(std::string base_url, std::string space_id, std::string token,
-           ChangeCallback on_change);
+           ChangeCallback on_change, TlsOptions tls = {});
   ~WsClient();
 
   WsClient(const WsClient&) = delete;
@@ -32,6 +33,7 @@ class WsClient {
 
  private:
   void wait_before_reconnect();
+  [[nodiscard]] std::string server_name() const;
 
   std::string base_url_;
   std::string host_;
@@ -39,6 +41,8 @@ class WsClient {
   std::string space_id_;
   std::string token_;
   ChangeCallback on_change_;
+  bool secure_ = false;
+  TlsOptions tls_;
 
   mutable std::mutex mutex_;
   std::condition_variable condition_;

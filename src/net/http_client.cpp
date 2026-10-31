@@ -82,14 +82,17 @@ Result<ClientResponse> perform_request(Stream& stream,
 
 template <typename Stream>
 Result<unsigned> perform_download(Stream& stream, http::request<http::empty_body>&& request,
-                                  const std::filesystem::path& destination) {
+                                  const std::filesystem::path& destination,
+                                  std::int64_t offset) {
   http::write(stream, request);
   beast::flat_buffer buffer;
   http::response_parser<http::file_body> parser;
   parser.body_limit(boost::none);
   boost::system::error_code error;
   const std::string native_path = destination.u8string();
-  parser.get().body().open(native_path.c_str(), beast::file_mode::write, error);
+  const beast::file_mode mode =
+      offset > 0 ? beast::file_mode::append : beast::file_mode::write;
+  parser.get().body().open(native_path.c_str(), mode, error);
   if (error) {
     return make_error(ErrorCode::IoError, "cannot open download destination");
   }
@@ -109,7 +112,8 @@ std::string HttpClient::server_name() const {
 }
 
 Result<unsigned> HttpClient::download_to_file(std::string_view target, std::string_view token,
-                                              const std::filesystem::path& destination) {
+                                              const std::filesystem::path& destination,
+                                              std::int64_t offset) {
   try {
     asio::io_context io_context;
     tcp::resolver resolver(io_context);
@@ -119,6 +123,9 @@ Result<unsigned> HttpClient::download_to_file(std::string_view target, std::stri
     request.set(http::field::host, host_);
     if (!token.empty()) {
       request.set(http::field::authorization, "Bearer " + std::string(token));
+    }
+    if (offset > 0) {
+      request.set(http::field::range, "bytes=" + std::to_string(offset) + "-");
     }
     request.prepare_payload();
 
@@ -151,7 +158,7 @@ Result<unsigned> HttpClient::download_to_file(std::string_view target, std::stri
         return make_error(ErrorCode::Unavailable, "TLS handshake failed: " + error.message());
       }
 
-      auto result = perform_download(stream, std::move(request), destination);
+      auto result = perform_download(stream, std::move(request), destination, offset);
       boost::system::error_code ignored;
       stream.shutdown(ignored);
       return result;
@@ -163,7 +170,7 @@ Result<unsigned> HttpClient::download_to_file(std::string_view target, std::stri
     if (error) {
       return make_error(ErrorCode::Unavailable, "cannot connect: " + error.message());
     }
-    auto result = perform_download(stream, std::move(request), destination);
+    auto result = perform_download(stream, std::move(request), destination, offset);
     boost::system::error_code ignored;
     stream.socket().shutdown(tcp::socket::shutdown_both, ignored);
     return result;

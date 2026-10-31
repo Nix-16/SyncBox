@@ -4,6 +4,7 @@
 
 #include <boost/beast/http/verb.hpp>
 
+#include <cstdint>
 #include <filesystem>
 #include <map>
 #include <string>
@@ -25,8 +26,8 @@ struct TlsOptions {
   std::string server_name;
 };
 
-// Minimal synchronous HTTP/1.1 client used by the sync engine. TLS is
-// scheduled for M6; only http:// URLs are accepted here.
+// Minimal synchronous HTTP/1.1 client used by the sync engine. Supports
+// http:// and https:// (TLS with optional CA file and hostname verification).
 class HttpClient {
  public:
   explicit HttpClient(std::string base_url, TlsOptions tls = {});
@@ -37,9 +38,12 @@ class HttpClient {
       std::vector<std::pair<std::string, std::string>> headers = {});
 
   // Streams the response body to `destination`; returns the HTTP status.
+  // With offset > 0 it sends "Range: bytes=<offset>-" and appends to the file,
+  // so a partial download can be resumed (expects 206; 200 means the server
+  // ignored the range and the caller must restart).
   [[nodiscard]] Result<unsigned> download_to_file(
       std::string_view target, std::string_view token,
-      const std::filesystem::path& destination);
+      const std::filesystem::path& destination, std::int64_t offset = 0);
 
   [[nodiscard]] const std::string& base_url() const noexcept { return base_url_; }
 

@@ -116,8 +116,10 @@ class EngineTest : public ::testing::Test {
     std::unique_ptr<syncbox::client::SyncEngine> engine;
   };
 
-  [[nodiscard]] ClientHandle make_client(const std::string& name, const std::string& token,
-                                         const std::string& server_url = {}) {
+  [[nodiscard]] ClientHandle make_client(
+      const std::string& name, const std::string& token,
+      const std::string& server_url = {},
+      std::int64_t chunk_size = 4 * 1024 * 1024, int chunk_parallelism = 4) {
     ClientHandle handle;
     handle.root = directory_.path() / name;
     std::filesystem::create_directories(handle.root);
@@ -132,6 +134,8 @@ class EngineTest : public ::testing::Test {
     config.server_url = server_url.empty() ? base_url_ : server_url;
     config.device_token = token;
     config.space_id = space_id_;
+    config.chunk_size = chunk_size;
+    config.chunk_parallelism = chunk_parallelism;
     handle.engine =
         std::make_unique<syncbox::client::SyncEngine>(config, *handle.store);
     return handle;
@@ -461,6 +465,25 @@ TEST_F(EngineTest, PropagatesFileLargerThanOneChunk) {
 }
 
 
+TEST_F(EngineTest, UploadsMultipleChunksWithBoundedParallelism) {
+  constexpr std::int64_t kChunk = 64 * 1024;
+  auto alice = make_client("alice", enroll("alice"), {}, kChunk, 4);
+  auto bob = make_client("bob", enroll("bob"), {}, kChunk, 4);
+
+  // Ten chunks of distinct bytes, uploaded by four workers at most.
+  std::string content;
+  content.reserve(static_cast<std::size_t>(kChunk) * 10);
+  for (std::int64_t i = 0; i < 10 * kChunk; ++i) {
+    content.push_back(static_cast<char>(i % 251));
+  }
+  write_file(alice.root / "chunks.bin", content);
+
+  ASSERT_TRUE(alice.engine->run_once());
+  ASSERT_TRUE(bob.engine->run_once());
+
+  EXPECT_EQ(read_file(bob.root / "chunks.bin"), content);
+}
+
 TEST_F(EngineTest, RenameMergesWithRemoteContentChange) {
   auto alice = make_client("alice", enroll("alice"));
   auto bob = make_client("bob", enroll("bob"));
@@ -522,6 +545,30 @@ TEST_F(EngineTest, IdenticalConcurrentCreatesShareTheRemoteFile) {
   EXPECT_TRUE(conflicts.value().empty());
 }
 
+
+TEST_F(EngineTest, ResumesInterruptedDownloadFromPartialFile) {
+  auto alice = make_client("alice", enroll("alice"));
+  auto bob = make_client("bob", enroll("bob"));
+
+  const std::string content(64 * 1024, 'r');
+  write_file(alice.root / "resume.bin", content);
+  ASSERT_TRUE(alice.engine->run_once());
+
+  auto hash = syncbox::sha256(content);
+  ASSERT_TRUE(hash);
+
+  // Simulate a previous download that stopped halfway: the stable partial
+  // path already holds the first half of the blob.
+  const auto part_directory = bob.root / ".syncbox" / "tmp";
+  std::filesystem::create_directories(part_directory);
+  const auto part = part_directory / ("download-" + hash.value().to_hex() + ".part");
+  write_file(part, content.substr(0, content.size() / 2));
+
+  ASSERT_TRUE(bob.engine->run_once());
+
+  EXPECT_EQ(read_file(bob.root / "resume.bin"), content);
+  EXPECT_FALSE(std::filesystem::exists(part));
+}
 
 TEST_F(EngineTest, RetryBackoffDelaysTheNextAttempt) {
   auto alice = make_client("alice", enroll("alice"), "http://127.0.0.1:1");
