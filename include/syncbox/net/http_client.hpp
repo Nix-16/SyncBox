@@ -24,6 +24,9 @@ struct TlsOptions {
   bool verify = true;
   std::string ca_file;
   std::string server_name;
+  // Optional SHA-256 fingerprint of the server certificate (hex, ':' allowed).
+  // Empty disables pinning. Pinning is checked in addition to CA validation.
+  std::string cert_fingerprint_sha256;
 };
 
 // Minimal synchronous HTTP/1.1 client used by the sync engine. Supports

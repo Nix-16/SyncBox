@@ -7,6 +7,11 @@
 
 #include <boost/beast/http/verb.hpp>
 
+#include <openssl/evp.h>
+#include <openssl/pem.h>
+#include <openssl/x509.h>
+
+#include <cstdio>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
@@ -81,6 +86,34 @@ class WsTestHandler final : public syncbox::net::RequestHandler {
   return std::string(SYNCBOX_SOURCE_DIR) + "/tests/data/test-server.key";
 }
 
+[[nodiscard]] std::string certificate_fingerprint() {
+  FILE* file = std::fopen(certificate_path().c_str(), "r");
+  if (file == nullptr) {
+    return {};
+  }
+  X509* certificate = PEM_read_X509(file, nullptr, nullptr, nullptr);
+  std::fclose(file);
+  if (certificate == nullptr) {
+    return {};
+  }
+
+  unsigned char digest[EVP_MAX_MD_SIZE] = {};
+  unsigned int length = 0;
+  const int ok = X509_digest(certificate, EVP_sha256(), digest, &length);
+  X509_free(certificate);
+  if (ok != 1) {
+    return {};
+  }
+
+  constexpr char kHex[] = "0123456789abcdef";
+  std::string fingerprint;
+  for (unsigned int i = 0; i < length; ++i) {
+    fingerprint.push_back(kHex[(digest[i] >> 4U) & 0x0FU]);
+    fingerprint.push_back(kHex[digest[i] & 0x0FU]);
+  }
+  return fingerprint;
+}
+
 }  // namespace
 
 TEST(TlsTest, ServesHealthOverTlsWithCaVerification) {
@@ -91,7 +124,7 @@ TEST(TlsTest, ServesHealthOverTlsWithCaVerification) {
 
   syncbox::net::HttpClient client(
       "https://127.0.0.1:" + std::to_string(server.port()),
-      syncbox::net::TlsOptions{true, certificate_path(), "localhost"});
+      syncbox::net::TlsOptions{true, certificate_path(), "localhost", ""});
   auto response = client.request(http::verb::get, "/v1/health");
   ASSERT_TRUE(response) << response.error().message;
   EXPECT_EQ(response.value().status, 200);
@@ -117,7 +150,7 @@ TEST(TlsTest, WebSocketOverTlsDeliversChanges) {
         received = seq;
         condition.notify_all();
       },
-      syncbox::net::TlsOptions{true, certificate_path(), "localhost"});
+      syncbox::net::TlsOptions{true, certificate_path(), "localhost", ""});
 
   std::thread thread([&] { client.run(); });
   ASSERT_TRUE(client.wait_connected(std::chrono::seconds(5)));
@@ -136,6 +169,40 @@ TEST(TlsTest, WebSocketOverTlsDeliversChanges) {
   server.stop();
 }
 
+TEST(TlsTest, AcceptsMatchingCertificatePin) {
+  HealthHandler handler;
+  syncbox::net::HttpServer server("127.0.0.1", 0, handler,
+                                  syncbox::net::TlsConfig{certificate_path(), key_path()}, 1);
+  ASSERT_TRUE(server.start());
+
+  const std::string fingerprint = certificate_fingerprint();
+  ASSERT_EQ(fingerprint.size(), 64U);
+
+  syncbox::net::HttpClient client(
+      "https://127.0.0.1:" + std::to_string(server.port()),
+      syncbox::net::TlsOptions{true, certificate_path(), "localhost", fingerprint});
+  auto response = client.request(http::verb::get, "/v1/health");
+  ASSERT_TRUE(response) << response.error().message;
+  EXPECT_EQ(response.value().status, 200);
+
+  server.stop();
+}
+
+TEST(TlsTest, RejectsMismatchedCertificatePin) {
+  HealthHandler handler;
+  syncbox::net::HttpServer server("127.0.0.1", 0, handler,
+                                  syncbox::net::TlsConfig{certificate_path(), key_path()}, 1);
+  ASSERT_TRUE(server.start());
+
+  syncbox::net::HttpClient client(
+      "https://127.0.0.1:" + std::to_string(server.port()),
+      syncbox::net::TlsOptions{true, certificate_path(), "localhost", std::string(64, '0')});
+  auto response = client.request(http::verb::get, "/v1/health");
+  EXPECT_FALSE(response);
+
+  server.stop();
+}
+
 TEST(TlsTest, RejectsUntrustedCertificate) {
   HealthHandler handler;
   syncbox::net::HttpServer server("127.0.0.1", 0, handler,
@@ -144,7 +211,7 @@ TEST(TlsTest, RejectsUntrustedCertificate) {
 
   syncbox::net::HttpClient client(
       "https://127.0.0.1:" + std::to_string(server.port()),
-      syncbox::net::TlsOptions{true, "", "localhost"});
+      syncbox::net::TlsOptions{true, "", "localhost", ""});
   auto response = client.request(http::verb::get, "/v1/health");
   EXPECT_FALSE(response);
 

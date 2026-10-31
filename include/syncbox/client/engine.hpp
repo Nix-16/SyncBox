@@ -24,6 +24,7 @@ struct EngineConfig {
   bool verify_tls = true;
   std::string ca_file;
   std::string tls_server_name;
+  std::string tls_cert_fingerprint;
   std::vector<std::string> ignore_patterns;
   std::int64_t chunk_size = 4 * 1024 * 1024;
   // Number of chunks uploaded concurrently (PROTOCOL.md M6 backpressure).

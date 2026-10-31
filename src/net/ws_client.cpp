@@ -1,5 +1,7 @@
 #include <syncbox/net/ws_client.hpp>
 
+#include "tls_pin.hpp"
+
 #include <boost/asio/connect.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/tcp.hpp>
@@ -178,6 +180,14 @@ void WsClient::run() {
           beast::get_lowest_layer(tls_stream).connect(endpoints, error);
           if (!error) {
             tls_stream.handshake(ssl::stream_base::client, error);
+          }
+          if (!error) {
+            auto pinned = detail::verify_certificate_pin(
+                tls_stream.native_handle(), tls_.cert_fingerprint_sha256);
+            if (!pinned) {
+              error = boost::system::errc::make_error_code(
+                  boost::system::errc::permission_denied);
+            }
           }
           if (!error) {
             websocket::stream<beast::ssl_stream<beast::tcp_stream>> stream(

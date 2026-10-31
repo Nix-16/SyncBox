@@ -14,7 +14,7 @@ C++17 跨平台双向文件同步工具（Windows / Linux / macOS），中心服
   inotify / ReadDirectoryChangesW / FSEvents 监控、服务端 HTTP/认证/提交/变更流/Blob/WebSocket/WSS、
   客户端引擎（push/pull/冲突/恢复/守护）与 CLI。
 - `syncboxd` 可启动 HTTP/TLS 服务；`syncbox` 可执行一次性同步与守护同步。
-- 91 个测试通过（含 HTTP/TLS/WSS/引擎集成、续传与进程崩溃注入）。
+- 93 个测试通过（含 HTTP/TLS/WSS/证书固定/引擎集成、续传与进程崩溃注入）。
 - 真实进度以 [docs/STATUS.md](docs/STATUS.md) 为准，本文档不重复其结论。
 
 ## 文档

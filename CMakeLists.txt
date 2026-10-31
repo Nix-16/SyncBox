@@ -133,6 +133,7 @@ syncbox_set_warnings(syncbox_fs)
 add_library(syncbox_net STATIC
   src/net/http_client.cpp
   src/net/http_server.cpp
+  src/net/tls_pin.cpp
   src/net/ws_client.cpp
   src/net/ws_hub.cpp)
 

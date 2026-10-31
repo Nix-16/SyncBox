@@ -90,8 +90,9 @@ void schedule_retry(ClientStore& store, const OpId& op_id, int attempts,
 
 SyncEngine::SyncEngine(EngineConfig config, ClientStore& store)
     : config_(std::move(config)), store_(store),
-      http_(config_.server_url, net::TlsOptions{config_.verify_tls, config_.ca_file,
-                                                config_.tls_server_name}),
+      http_(config_.server_url,
+            net::TlsOptions{config_.verify_tls, config_.ca_file, config_.tls_server_name,
+                            config_.tls_cert_fingerprint}),
       ignore_(config_.ignore_patterns) {}
 
 std::string SyncEngine::space_prefix() const {
@@ -504,7 +505,8 @@ Result<void> SyncEngine::upload_blob(const StagedContent& content) {
     // own instance to keep TLS contexts and sockets independent.
     net::HttpClient client(config_.server_url,
                            net::TlsOptions{config_.verify_tls, config_.ca_file,
-                                           config_.tls_server_name});
+                                           config_.tls_server_name,
+                                           config_.tls_cert_fingerprint});
     auto uploaded = client.request(
         http::verb::put,
         "/v1/blobs/" + content.hash.to_hex() + "/chunks/" + std::to_string(chunk_index),

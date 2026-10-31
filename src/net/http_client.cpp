@@ -1,5 +1,7 @@
 #include <syncbox/net/http_client.hpp>
 
+#include "tls_pin.hpp"
+
 #include <boost/asio/connect.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/tcp.hpp>
@@ -157,6 +159,14 @@ Result<unsigned> HttpClient::download_to_file(std::string_view target, std::stri
       if (error) {
         return make_error(ErrorCode::Unavailable, "TLS handshake failed: " + error.message());
       }
+      if (auto pinned =
+              detail::verify_certificate_pin(stream.native_handle(),
+                                             tls_.cert_fingerprint_sha256);
+          !pinned) {
+        boost::system::error_code ignored;
+        stream.shutdown(ignored);
+        return pinned.error();
+      }
 
       auto result = perform_download(stream, std::move(request), destination, offset);
       boost::system::error_code ignored;
@@ -230,6 +240,14 @@ Result<ClientResponse> HttpClient::request(
       stream.handshake(ssl::stream_base::client, error);
       if (error) {
         return make_error(ErrorCode::Unavailable, "TLS handshake failed: " + error.message());
+      }
+      if (auto pinned =
+              detail::verify_certificate_pin(stream.native_handle(),
+                                             tls_.cert_fingerprint_sha256);
+          !pinned) {
+        boost::system::error_code ignored;
+        stream.shutdown(ignored);
+        return pinned.error();
       }
 
       auto result = perform_request(stream, std::move(request));

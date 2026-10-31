@@ -40,6 +40,7 @@ Result<void> SyncDaemon::start() {
     tls.verify = config_.verify_tls;
     tls.ca_file = config_.ca_file;
     tls.server_name = config_.tls_server_name;
+    tls.cert_fingerprint_sha256 = config_.tls_cert_fingerprint;
     ws_client_ = std::make_unique<net::WsClient>(
         config_.server_url, config_.space_id, config_.device_token,
         [this](Seq) { request_sync(); }, tls);

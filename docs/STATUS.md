@@ -3,10 +3,10 @@
 | 项目 | 内容 |
 |---|---|
 | 报告日期 | 2026-10-27 |
-| 当前里程碑 | **M6 进行中：退避、TLS、断点续传、WSS、并发分块已完成；限速/证书固定待完成** |
+| 当前里程碑 | **M6 进行中：退避、TLS、断点续传、WSS、并发分块、证书固定已完成；限速/故障注入待完成** |
 | 代码状态 | core + store + fs + net + server + client（引擎/冲突/守护/WS/恢复/核对）；GUI 未实现 |
 | 构建状态 | **可构建**：CMake 3.22 + vcpkg（storage/unicode/crypto/networking/json） |
-| 测试状态 | 91 个测试（含 HTTP/Blob/TLS/WSS/引擎集成）；Linux Debug 与 ASan/UBSan 通过；三平台 CI 待运行 |
+| 测试状态 | 93 个测试（含 HTTP/Blob/TLS/WSS/引擎集成）；Linux Debug 与 ASan/UBSan 通过；三平台 CI 待运行 |
 | 版本控制 | Git 已初始化，远端 `github.com/Nix-16/SyncBox` |
 
 > 本文档是项目真实状态的唯一依据。任何“已完成”的声明必须在此处有对应条目与证据（文件路径、命令输出、测试名称）。**当前没有任何同步功能可用。**
@@ -142,9 +142,11 @@ CI 运行（run [39631445766](https://github.com/Nix-16/SyncBox/actions/runs/396
 | 引擎续传 | `EngineTest.ResumesInterruptedDownloadFromPartialFile` | 半截 `.part` 续传，最终哈希一致 |
 | 并发分块 | `EngineTest.UploadsMultipleChunksWithBoundedParallelism` | 10 块、4 并发，内容一致 |
 | PF-02 | `./build/dev/tests/syncbox_transfer_benchmark 100` | 100 MiB：上传 4457 ms、下载 2126 ms、hash_ok=1（回环，2 核 VM） |
+| 证书固定 | `TlsTest.AcceptsMatchingCertificatePin` / `RejectsMismatchedCertificatePin` | 匹配指纹通过；不匹配拒绝 |
 
-> 尚未完成：客户端限速/带宽配置、证书固定（pinning）、FI-06..10 全量故障注入。
+> 尚未完成：客户端限速/带宽配置、FI-06..10 全量故障注入。
 > 中断 3 次的连续续传仅以“预置半截文件”方式验证，未做真实断链注入。
+> 本地曾出现一次 WSS 测试偶发 abort；单测重复 30 次、全套重复 20 次均未复现，暂记录为观察项。
 
 ### M4 进展证据（2026-10-27，Linux aarch64）
 
@@ -200,7 +202,8 @@ CI 运行（run [39813188841](https://github.com/Nix-16/SyncBox/actions/runs/398
 | R-07 | 文档量大 | 可能与实现漂移 | AGENTS.md 强制同步更新 + M9 审计 |
 | R-08 | SQLite 单写者 | 服务端吞吐上限 | 短事务；M9 基准验证 |
 | R-09 | 无 E2EE | 服务端可读明文 | 已在 PRD/SECURITY 明示，v2 议题 |
-| R-10 | 性能指标未验证 | 目标可能不现实 | M6/M9 实测并记录偏差 |
+| R-10 | 性能指标未验证 | 目标可能不现实 | PF-02 已实测；其余 M9 实测并记录偏差 |
+| R-11 | GitHub 在启动 1 秒后取消 macOS job | macOS 结果缺失，三平台声明不完整 | 重试/切换 macOS 镜像；必要时在 STATUS 标注未验证 |
 
 ---
 
