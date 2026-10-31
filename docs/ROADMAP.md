@@ -272,7 +272,7 @@ M9 性能、跨平台验收与交付
 ### 验收
 - [x] TC-106、TC-107 通过（`PropagatesFileLargerThanOneChunk`、`UploadsMultipleChunksWithBoundedParallelism`）。
 - [ ] FI-06..10 通过（离线队列已有覆盖；断链/丢包注入待补）。
-- [ ] PF-02 达标（100 MiB ≤ 60 s；尚未测量）。
+- [x] PF-02 达标（100 MiB：上传 4.46 s + 下载 2.13 s，回环；目标 ≤ 60 s）。
 - [ ] 中断 3 次续传成功且最终哈希一致（单次半截续传已测；真实断链待补）。
 - [x] TLS 关闭/证书错误时明确失败，不降级（`TlsTest.RejectsUntrustedCertificate`）。
 

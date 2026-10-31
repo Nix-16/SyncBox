@@ -66,7 +66,12 @@ gtest_discover_tests(syncbox_unit_tests
   PROPERTIES ENVIRONMENT
     "SYNCBOX_CRASH_WRITER=${SYNCBOX_TEST_OUTPUT_DIR}/syncbox_crash_writer${CMAKE_EXECUTABLE_SUFFIX}")
 
-# Manual benchmark; not registered with CTest.
+# Manual benchmarks; not registered with CTest.
 add_executable(syncbox_scan_benchmark bench/scan_benchmark.cpp)
 target_link_libraries(syncbox_scan_benchmark PRIVATE syncbox_fs)
 syncbox_set_warnings(syncbox_scan_benchmark)
+
+add_executable(syncbox_transfer_benchmark bench/transfer_benchmark.cpp)
+target_link_libraries(syncbox_transfer_benchmark PRIVATE
+  syncbox_core syncbox_store syncbox_net syncbox_server syncbox_client)
+syncbox_set_warnings(syncbox_transfer_benchmark)

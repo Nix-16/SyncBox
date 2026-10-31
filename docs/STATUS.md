@@ -141,8 +141,9 @@ CI 运行（run [39631445766](https://github.com/Nix-16/SyncBox/actions/runs/396
 | Range 续传 | `HttpClientTest.ResumesWithRangeAndAppends` | 发送 `Range: bytes=4-`，返回 206 并追加 |
 | 引擎续传 | `EngineTest.ResumesInterruptedDownloadFromPartialFile` | 半截 `.part` 续传，最终哈希一致 |
 | 并发分块 | `EngineTest.UploadsMultipleChunksWithBoundedParallelism` | 10 块、4 并发，内容一致 |
+| PF-02 | `./build/dev/tests/syncbox_transfer_benchmark 100` | 100 MiB：上传 4457 ms、下载 2126 ms、hash_ok=1（回环，2 核 VM） |
 
-> 尚未完成：客户端限速/带宽配置、证书固定（pinning）、FI-06..10 全量故障注入、PF-02 基准测量。
+> 尚未完成：客户端限速/带宽配置、证书固定（pinning）、FI-06..10 全量故障注入。
 > 中断 3 次的连续续传仅以“预置半截文件”方式验证，未做真实断链注入。
 
 ### M4 进展证据（2026-10-27，Linux aarch64）
