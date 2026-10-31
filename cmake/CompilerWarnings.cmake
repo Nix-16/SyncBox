@@ -1,6 +1,8 @@
 function(syncbox_set_warnings target)
   if(MSVC)
-    target_compile_options(${target} PRIVATE /W4 /permissive-)
+    # /bigobj: template-heavy translation units (WS sessions) exceed the
+    # default COFF section limit on MSVC.
+    target_compile_options(${target} PRIVATE /W4 /permissive- /bigobj)
   else()
     target_compile_options(${target} PRIVATE
       -Wall
