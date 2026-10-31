@@ -6,7 +6,7 @@
 | 当前里程碑 | **M6 进行中：退避、TLS、断点续传、WSS、并发分块、证书固定已完成；限速/故障注入待完成** |
 | 代码状态 | core + store + fs + net + server + client（引擎/冲突/守护/WS/恢复/核对）；GUI 未实现 |
 | 构建状态 | **可构建**：CMake 3.22 + vcpkg（storage/unicode/crypto/networking/json） |
-| 测试状态 | 93 个测试（含 HTTP/Blob/TLS/WSS/引擎集成）；Linux Debug 与 ASan/UBSan 通过；三平台 CI 待运行 |
+| 测试状态 | 94 个测试（含 HTTP/Blob/TLS/WSS/引擎集成/断链续传）；Linux Debug 与 ASan/UBSan 通过；三平台 CI 待运行 |
 | 版本控制 | Git 已初始化，远端 `github.com/Nix-16/SyncBox` |
 
 > 本文档是项目真实状态的唯一依据。任何“已完成”的声明必须在此处有对应条目与证据（文件路径、命令输出、测试名称）。**当前没有任何同步功能可用。**
@@ -143,9 +143,9 @@ CI 运行（run [39631445766](https://github.com/Nix-16/SyncBox/actions/runs/396
 | 并发分块 | `EngineTest.UploadsMultipleChunksWithBoundedParallelism` | 10 块、4 并发，内容一致 |
 | PF-02 | `./build/dev/tests/syncbox_transfer_benchmark 100` | 100 MiB：上传 4457 ms、下载 2126 ms、hash_ok=1（回环，2 核 VM） |
 | 证书固定 | `TlsTest.AcceptsMatchingCertificatePin` / `RejectsMismatchedCertificatePin` | 匹配指纹通过；不匹配拒绝 |
+| 真实断链续传 | `EngineTest.ResumesAfterThreeConnectionDrops` | 代理截断 3 次下载，客户端以 Range 续传成功，内容一致 |
 
-> 尚未完成：客户端限速/带宽配置、FI-06..10 全量故障注入。
-> 中断 3 次的连续续传仅以“预置半截文件”方式验证，未做真实断链注入。
+> 尚未完成：客户端限速/带宽配置、FI-09/10（磁盘满）注入。FI-07/08 已由故障代理覆盖。
 > 本地曾出现一次 WSS 测试偶发 abort；单测重复 30 次、全套重复 20 次均未复现，暂记录为观察项。
 
 ### M4 进展证据（2026-10-27，Linux aarch64）

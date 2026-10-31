@@ -46,8 +46,11 @@ jobs:
         run: |
           log=build/Testing/Temporary/LastTest.log
           if [ -f "$log" ]; then
-            grep -aE "Test #|Failed|FAILED|Exception|what\\(\\)|Value of:|Expected|Actual|exit code|not found" "$log" | tail -100 | while IFS= read -r line; do
+            grep -aE "FAILED|Failed|Value of:|Expected|Actual|what\\(\\)|error:" "$log" | head -6 | while IFS= read -r line; do
               echo "::error title=CTest::$line"
+            done
+            tail -18 "$log" | while IFS= read -r line; do
+              echo "::error title=LastTestTail::$line"
             done
           else
             echo "::error title=CTest::LastTest.log not found"
@@ -87,8 +90,11 @@ jobs:
         run: |
           log=build/Testing/Temporary/LastTest.log
           if [ -f "$log" ]; then
-            grep -aE "Test #|Failed|FAILED|Exception|what\\(\\)|Value of:|Expected|Actual|exit code|not found" "$log" | tail -100 | while IFS= read -r line; do
+            grep -aE "FAILED|Failed|Value of:|Expected|Actual|what\\(\\)|error:" "$log" | head -6 | while IFS= read -r line; do
               echo "::error title=CTest::$line"
+            done
+            tail -18 "$log" | while IFS= read -r line; do
+              echo "::error title=LastTestTail::$line"
             done
           else
             echo "::error title=CTest::LastTest.log not found"

@@ -24,6 +24,7 @@
 #include <thread>
 
 #include "test_support.hpp"
+#include "../helpers/fault_proxy.hpp"
 
 namespace {
 
@@ -568,6 +569,29 @@ TEST_F(EngineTest, ResumesInterruptedDownloadFromPartialFile) {
 
   EXPECT_EQ(read_file(bob.root / "resume.bin"), content);
   EXPECT_FALSE(std::filesystem::exists(part));
+}
+
+TEST_F(EngineTest, ResumesAfterThreeConnectionDrops) {
+  auto alice = make_client("alice", enroll("alice"));
+  syncbox::test::FaultProxy proxy("127.0.0.1", server_->port());
+  auto bob = make_client("bob", enroll("bob"), proxy.url());
+
+  const std::string content(256 * 1024, 'z');
+  write_file(alice.root / "resilient.bin", content);
+  ASSERT_TRUE(alice.engine->run_once());
+
+  proxy.interrupt_next_downloads(3);
+
+  bool synced = false;
+  int attempts = 0;
+  for (; attempts < 8 && !synced; ++attempts) {
+    synced = bob.engine->run_once().has_value();
+  }
+
+  EXPECT_TRUE(synced);
+  EXPECT_GE(attempts, 4);  // first attempt plus three truncated downloads
+  EXPECT_GE(proxy.range_requests(), 3);
+  EXPECT_EQ(read_file(bob.root / "resilient.bin"), content);
 }
 
 TEST_F(EngineTest, RetryBackoffDelaysTheNextAttempt) {
