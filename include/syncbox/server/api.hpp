@@ -5,6 +5,7 @@
 #include <syncbox/server/auth_service.hpp>
 #include <syncbox/server/blob_store.hpp>
 #include <syncbox/server/op_service.hpp>
+#include <syncbox/server/rate_limiter.hpp>
 
 #include <mutex>
 
@@ -15,8 +16,12 @@ namespace syncbox::server {
 class Api final : public net::RequestHandler {
  public:
   Api(ServerStore& store, AuthService& auth, OpService& ops, BlobStore& blobs,
-      net::WsHub& hub)
-      : store_(store), auth_(auth), ops_(ops), blobs_(blobs), hub_(hub) {}
+      net::WsHub& hub, RateLimitConfig limits = {})
+      : store_(store), auth_(auth), ops_(ops), blobs_(blobs), hub_(hub),
+        rate_limits_(limits) {}
+
+  // Replaces the per-device limits and clears bucket state (tests/ops).
+  void set_rate_limits(RateLimitConfig limits);
 
   [[nodiscard]] net::UpgradeResult handle_upgrade(
       boost::beast::tcp_stream&& stream,
@@ -46,6 +51,8 @@ class Api final : public net::RequestHandler {
   // SQLite uses a single writer connection; serialize request handling until
   // M9 introduces a dedicated writer queue.
   std::mutex mutex_;
+  RateLimitConfig rate_limits_;
+  RateLimiter rate_limiter_;
 };
 
 }  // namespace syncbox::server

@@ -564,3 +564,28 @@ TEST_F(ServerApiTest, ConcurrentUpdatesOnlyOneWins) {
   EXPECT_EQ(successes.load(), 1);
   EXPECT_EQ(conflicts.load(), 9);
 }
+
+TEST_F(ServerApiTest, RateLimitsChangeRequests) {
+  const std::string token = enroll_device();
+  api_->set_rate_limits(syncbox::server::RateLimitConfig{60, 600, 1});
+
+  const std::string target = "/v1/spaces/" + space_id_ + "/changes?since=0";
+  auto first = http_call(server_->port(), http::verb::get, target, {}, token);
+  EXPECT_EQ(first.status, 200);
+
+  auto second = http_call(server_->port(), http::verb::get, target, {}, token);
+  EXPECT_EQ(second.status, 429);
+  EXPECT_EQ(second.headers.at("retry-after"), "60");
+  auto body = nlohmann::json::parse(second.body);
+  EXPECT_EQ(body["error"]["code"].get<std::string>(), "RATE_LIMITED");
+}
+
+TEST_F(ServerApiTest, RevokedDeviceIsRejected) {
+  const std::string token = enroll_device();
+  ASSERT_TRUE(auth_->revoke(device_id_, "test revocation"));
+
+  auto me = http_call(server_->port(), http::verb::get, "/v1/me", {}, token);
+  EXPECT_EQ(me.status, 403);
+  auto body = nlohmann::json::parse(me.body);
+  EXPECT_EQ(body["error"]["code"].get<std::string>(), "DEVICE_REVOKED");
+}

@@ -6,7 +6,7 @@ C++17 跨平台双向文件同步工具（Windows / Linux / macOS），中心服
 
 ## 当前状态
 
-> **M6 完成：退避、TLS、证书固定、断点续传、WSS、并发分块与故障注入已通过三平台 CI。**
+> **M6 完成（三平台 CI 7/7）。M7 GUI 因本环境无 Qt6 而阻塞；正在推进 M8 安全加固。**
 
 - 需求、架构、数据库、协议、冲突策略、安全、测试计划与路线图已冻结（见 `docs/`）。
 - 已实现：版本模型、路径规范化（NFC/casefold）、流式 SHA-256、UUIDv7、
@@ -14,7 +14,7 @@ C++17 跨平台双向文件同步工具（Windows / Linux / macOS），中心服
   inotify / ReadDirectoryChangesW / FSEvents 监控、服务端 HTTP/认证/提交/变更流/Blob/WebSocket/WSS、
   客户端引擎（push/pull/冲突/恢复/守护）与 CLI。
 - `syncboxd` 可启动 HTTP/TLS 服务；`syncbox` 可执行一次性同步与守护同步。
-- 96 个测试通过（含 HTTP/TLS/WSS/证书固定/引擎集成、断链续传、磁盘满与进程崩溃注入）。
+- 102 个测试通过（含限流、撤销、HTTP/TLS/WSS、断链续传、磁盘满与进程崩溃注入）。
 - 真实进度以 [docs/STATUS.md](docs/STATUS.md) 为准，本文档不重复其结论。
 
 ## 文档

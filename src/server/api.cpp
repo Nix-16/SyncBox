@@ -263,12 +263,63 @@ net::UpgradeResult Api::handle_upgrade(
   return result;
 }
 
+namespace {
+
+[[nodiscard]] bool ends_with(std::string_view text, std::string_view suffix) {
+  return text.size() >= suffix.size() &&
+         text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+struct RateCategory {
+  std::string name;
+  int limit = 0;
+};
+
+[[nodiscard]] std::optional<RateCategory> rate_category(const ParsedTarget& target,
+                                                        http::verb method,
+                                                        const RateLimitConfig& limits) {
+  if (method == http::verb::get && ends_with(target.path, "/changes")) {
+    return RateCategory{"changes", limits.changes_per_minute};
+  }
+  if (method == http::verb::post && ends_with(target.path, "/ops")) {
+    return RateCategory{"ops", limits.ops_per_minute};
+  }
+  if (method == http::verb::put && target.path.find("/chunks/") != std::string::npos) {
+    return RateCategory{"chunks", limits.chunk_puts_per_minute};
+  }
+  return std::nullopt;
+}
+
+}  // namespace
+
+void Api::set_rate_limits(RateLimitConfig limits) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  rate_limits_ = limits;
+  rate_limiter_.reset();
+}
+
 net::HttpResponse Api::handle(const net::HttpRequest& request) {
   std::lock_guard<std::mutex> lock(mutex_);
   if (request.method != http::verb::put && request.body.size() > 1024 * 1024) {
     return error_response(ErrorCode::PayloadTooLarge, "request body exceeds 1 MiB");
   }
   const ParsedTarget target = parse_target(request.target);
+
+  if (auto category = rate_category(target, request.method, rate_limits_);
+      category.has_value()) {
+    const auto token = bearer_token(request);
+    if (token.has_value()) {
+      auto token_hash = hash_token(*token);
+      if (token_hash) {
+        const std::string key = token_hash.value().to_hex() + ":" + category->name;
+        if (!rate_limiter_.allow(key, category->limit)) {
+          auto response = error_response(ErrorCode::RateLimited, "rate limit exceeded");
+          response.headers.emplace_back("Retry-After", "60");
+          return response;
+        }
+      }
+    }
+  }
 
   if (is_get(request) && target.path == "/v1/health") {
     return json_response(200, nlohmann::json{{"status", "ok"},
