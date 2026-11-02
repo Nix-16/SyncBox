@@ -83,7 +83,13 @@ class WsSession final : public WsConnection,
                              {"space_id", self->space_id_},
                              {"seq", self->initial_seq_.value},
                              {"heartbeat_s", 25}};
-      self->enqueue_locked(welcome.dump());
+      // Changes may have been queued before the handshake completed; the
+      // welcome message must still be the first frame written.
+      self->ready_ = true;
+      self->outbox_.push_front(welcome.dump());
+      if (!self->writing_) {
+        self->do_write_locked();
+      }
       self->do_read_locked();
     });
   }
@@ -138,7 +144,8 @@ class WsSession final : public WsConnection,
       return;
     }
     outbox_.push_back(std::move(message));
-    if (!writing_) {
+    // Never initiate a write before the server-side handshake completed.
+    if (ready_ && !writing_) {
       do_write_locked();
     }
   }
@@ -208,6 +215,7 @@ class WsSession final : public WsConnection,
   bool writing_ = false;
   bool closed_ = false;
   bool close_after_write_ = false;
+  bool ready_ = false;
 };
 
 }  // namespace syncbox::net
