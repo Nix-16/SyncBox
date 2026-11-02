@@ -7,6 +7,7 @@
 #include <boost/beast/websocket.hpp>
 
 #include <exception>
+#include <future>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -235,6 +236,16 @@ void HttpServer::stop() {
     }
   }
   threads_.clear();
+}
+
+void HttpServer::wait_idle(std::chrono::milliseconds timeout) {
+  if (stopping_.load()) {
+    return;
+  }
+  auto promise = std::make_shared<std::promise<void>>();
+  auto future = promise->get_future();
+  boost::asio::post(io_context_, [promise] { promise->set_value(); });
+  (void)future.wait_for(timeout);
 }
 
 void HttpServer::do_accept() {

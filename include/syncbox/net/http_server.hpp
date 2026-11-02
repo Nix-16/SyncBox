@@ -10,6 +10,7 @@
 #include <boost/beast/ssl.hpp>
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -91,6 +92,10 @@ class HttpServer {
 
   [[nodiscard]] Result<void> start();
   void stop();
+
+  // Posts a barrier to the server's io_context and waits for it. Useful for
+  // tests that need cancellation handlers to run before shutting down.
+  void wait_idle(std::chrono::milliseconds timeout = std::chrono::seconds(1));
 
   [[nodiscard]] std::uint16_t port() const noexcept { return bound_port_; }
 

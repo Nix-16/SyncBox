@@ -63,6 +63,7 @@ class WsSession final : public WsConnection,
         initial_seq_(initial_seq) {}
 
   void run(http::request<http::string_body>&& request) {
+    std::lock_guard<std::mutex> lock(mutex_);
     websocket_.set_option(
         websocket::stream_base::timeout::suggested(beast::role_type::server));
     websocket_.set_option(websocket::stream_base::decorator(
@@ -73,28 +74,30 @@ class WsSession final : public WsConnection,
 
     auto self = this->shared_from_this();
     websocket_.async_accept(request, [self](boost::system::error_code error) {
+      std::lock_guard<std::mutex> handler_lock(self->mutex_);
       if (error) {
-        self->close();
+        self->close_locked();
         return;
       }
       nlohmann::json welcome{{"type", "welcome"},
                              {"space_id", self->space_id_},
                              {"seq", self->initial_seq_.value},
                              {"heartbeat_s", 25}};
-      self->enqueue(welcome.dump());
-      self->do_read();
+      self->enqueue_locked(welcome.dump());
+      self->do_read_locked();
     });
   }
 
   void send_change(Seq seq) override {
     auto self = this->shared_from_this();
     boost::asio::post(websocket_.get_executor(), [self, seq] {
+      std::lock_guard<std::mutex> lock(self->mutex_);
       if (self->closed_) {
         return;
       }
       nlohmann::json message{
           {"type", "change"}, {"space_id", self->space_id_}, {"seq", seq.value}};
-      self->enqueue(message.dump());
+      self->enqueue_locked(message.dump());
     });
   }
 
@@ -103,17 +106,18 @@ class WsSession final : public WsConnection,
   }
 
  private:
-  void do_read() {
+  void do_read_locked() {
     auto self = this->shared_from_this();
     websocket_.async_read(buffer_, [self](boost::system::error_code error, std::size_t) {
+      std::lock_guard<std::mutex> lock(self->mutex_);
       if (error) {
-        self->close();
+        self->close_locked();
         return;
       }
       const std::string text = beast::buffers_to_string(self->buffer_.data());
       self->buffer_.consume(self->buffer_.size());
       self->handle_message(text);
-      self->do_read();
+      self->do_read_locked();
     });
   }
 
@@ -123,25 +127,28 @@ class WsSession final : public WsConnection,
       return;
     }
     if (message["type"] == "ping") {
-      enqueue(nlohmann::json{{"type", "pong"}}.dump());
+      enqueue_locked(nlohmann::json{{"type", "pong"}}.dump());
     }
     // "ack" messages are accepted but the device cursor is updated through
     // the HTTP ack endpoint; WS acks are advisory.
   }
 
-  void enqueue(std::string message) {
+  void enqueue_locked(std::string message) {
     if (closed_) {
       return;
     }
     outbox_.push_back(std::move(message));
     if (!writing_) {
-      do_write();
+      do_write_locked();
     }
   }
 
-  void do_write() {
+  void do_write_locked() {
     if (outbox_.empty()) {
       writing_ = false;
+      if (close_after_write_) {
+        close_socket_locked();
+      }
       return;
     }
     writing_ = true;
@@ -149,25 +156,49 @@ class WsSession final : public WsConnection,
     websocket_.async_write(
         boost::asio::buffer(outbox_.front()),
         [self](boost::system::error_code error, std::size_t) {
+          std::lock_guard<std::mutex> lock(self->mutex_);
+          self->writing_ = false;
           if (error) {
-            self->close();
+            self->outbox_.clear();
+            if (!self->closed_) {
+              self->closed_ = true;
+              self->hub_.remove(self.get());
+            }
+            self->close_socket_locked();
             return;
           }
           self->outbox_.pop_front();
-          self->do_write();
+          if (self->close_after_write_) {
+            self->close_socket_locked();
+            return;
+          }
+          self->do_write_locked();
         });
   }
 
-  void close() {
+  void close_locked() {
     if (closed_) {
       return;
     }
     closed_ = true;
     hub_.remove(this);
+    // A pending write still owns the stream; let its completion handler close
+    // the socket so the stream is not destroyed with an outstanding op.
+    if (writing_) {
+      close_after_write_ = true;
+      return;
+    }
+    close_socket_locked();
+  }
+
+  void close_socket_locked() {
+    closed_ = true;
+    close_after_write_ = false;
     boost::system::error_code ignored;
     beast::get_lowest_layer(websocket_).socket().close(ignored);
   }
 
+  std::mutex mutex_;
   websocket::stream<Stream> websocket_;
   WsHub& hub_;
   std::string space_id_;
@@ -176,6 +207,7 @@ class WsSession final : public WsConnection,
   std::deque<std::string> outbox_;
   bool writing_ = false;
   bool closed_ = false;
+  bool close_after_write_ = false;
 };
 
 }  // namespace syncbox::net

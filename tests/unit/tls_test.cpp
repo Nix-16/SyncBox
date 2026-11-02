@@ -166,6 +166,13 @@ TEST(TlsTest, WebSocketOverTlsDeliversChanges) {
 
   client.stop();
   thread.join();
+
+  // Let the server's read/write cancellation handlers finish before the
+  // io_context is torn down; Beast asserts otherwise.
+  for (int i = 0; i < 100 && handler.hub_.size() > 0; ++i) {
+    server.wait_idle(std::chrono::milliseconds(20));
+  }
+  server.wait_idle(std::chrono::milliseconds(200));
   server.stop();
 }
 
