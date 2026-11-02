@@ -571,6 +571,50 @@ TEST_F(EngineTest, ResumesInterruptedDownloadFromPartialFile) {
   EXPECT_FALSE(std::filesystem::exists(part));
 }
 
+TEST_F(EngineTest, ClientDiskFullLeavesTargetUntouched) {
+  auto alice = make_client("alice", enroll("alice"));
+  auto bob = make_client("bob", enroll("bob"));
+
+  const std::string content = "client-disk-full";
+  write_file(alice.root / "disk.bin", content);
+  ASSERT_TRUE(alice.engine->run_once());
+
+  {
+    syncbox::test::EnvironmentVariable fault("SYNCBOX_FAULT_CLIENT_DISK_FULL", "1");
+    auto failed = bob.engine->run_once();
+    EXPECT_FALSE(failed);
+  }
+
+  EXPECT_FALSE(std::filesystem::exists(bob.root / "disk.bin"));
+
+  ASSERT_TRUE(bob.engine->run_once());
+  EXPECT_EQ(read_file(bob.root / "disk.bin"), content);
+}
+
+TEST_F(EngineTest, ServerDiskFullFailsUploadAndRetries) {
+  auto alice = make_client("alice", enroll("alice"));
+  auto bob = make_client("bob", enroll("bob"));
+
+  const std::string content = "server-disk-full";
+  write_file(alice.root / "serverdisk.bin", content);
+
+  {
+    syncbox::test::EnvironmentVariable fault("SYNCBOX_FAULT_SERVER_DISK_FULL", "1");
+    auto failed = alice.engine->run_once();
+    EXPECT_FALSE(failed);
+  }
+
+  auto pending = alice.store->list_pending_ops();
+  ASSERT_TRUE(pending);
+  ASSERT_FALSE(pending.value().empty());
+  const auto op_id = pending.value().front().op_id;
+  ASSERT_TRUE(alice.store->update_pending_state(op_id, "retry", std::nullopt, 0));
+
+  ASSERT_TRUE(alice.engine->run_once());
+  ASSERT_TRUE(bob.engine->run_once());
+  EXPECT_EQ(read_file(bob.root / "serverdisk.bin"), content);
+}
+
 TEST_F(EngineTest, ResumesAfterThreeConnectionDrops) {
   auto alice = make_client("alice", enroll("alice"));
   syncbox::test::FaultProxy proxy("127.0.0.1", server_->port());

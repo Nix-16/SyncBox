@@ -4,6 +4,7 @@
 #include <syncbox/store/database.hpp>
 
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -36,6 +37,52 @@ class TempDirectory {
 
  private:
   std::filesystem::path path_;
+};
+
+// Sets an environment variable for the lifetime of the object and restores
+// the previous value afterwards.
+class EnvironmentVariable {
+ public:
+  EnvironmentVariable(const char* name, const char* value) : name_(name) {
+    const char* existing = std::getenv(name);
+    if (existing != nullptr) {
+      previous_ = existing;
+      had_previous_ = true;
+    }
+    set(value);
+  }
+
+  ~EnvironmentVariable() {
+    if (had_previous_) {
+      set(previous_.c_str());
+    } else {
+      unset();
+    }
+  }
+
+  EnvironmentVariable(const EnvironmentVariable&) = delete;
+  EnvironmentVariable& operator=(const EnvironmentVariable&) = delete;
+
+ private:
+  void set(const char* value) {
+#ifdef _WIN32
+    _putenv_s(name_.c_str(), value);
+#else
+    setenv(name_.c_str(), value, 1);
+#endif
+  }
+
+  void unset() {
+#ifdef _WIN32
+    _putenv_s(name_.c_str(), "");
+#else
+    unsetenv(name_.c_str());
+#endif
+  }
+
+  std::string name_;
+  std::string previous_;
+  bool had_previous_ = false;
 };
 
 inline std::int64_t scalar_int(Database& db, std::string_view sql) {

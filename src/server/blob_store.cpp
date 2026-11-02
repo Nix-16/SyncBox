@@ -1,5 +1,6 @@
 #include <syncbox/server/blob_store.hpp>
 
+#include <syncbox/common/fault.hpp>
 #include <syncbox/common/time.hpp>
 #include <syncbox/core/hash.hpp>
 #include <syncbox/core/uuid.hpp>
@@ -144,6 +145,9 @@ Result<BlobInitResult> BlobStore::status(std::string_view content_hash_text) {
 
 Result<void> BlobStore::put_chunk(std::string_view content_hash_text, int chunk_index,
                                   std::string_view data, std::string_view chunk_hash_text) {
+  if (fault::server_disk_full()) {
+    return make_error(ErrorCode::IoError, "injected server disk full");
+  }
   auto hash = canonical_hash(content_hash_text);
   if (!hash) {
     return hash.error();

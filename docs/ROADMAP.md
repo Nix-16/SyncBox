@@ -255,7 +255,7 @@ M9 性能、跨平台验收与交付
 
 ## 7. M6 —— 传输完善
 
-> 状态：进行中（2026-10-31）。退避、TLS、证书固定、Range 断点续传、WSS、并发分块已实现；限速、FI-06..10 与真实断链续传待完成。
+> 状态：**已完成（2026-11-02）**。退避、TLS、证书固定、Range 续传、WSS、并发分块、断链与磁盘满故障注入均已完成；客户端带宽限速为可选项，未实现。
 
 ### 目标
 大文件、弱网、中断续传、TLS、重试与限速达标。
@@ -271,7 +271,7 @@ M9 性能、跨平台验收与交付
 
 ### 验收
 - [x] TC-106、TC-107 通过（`PropagatesFileLargerThanOneChunk`、`UploadsMultipleChunksWithBoundedParallelism`）。
-- [ ] FI-06..10 通过（FI-06 离线队列、FI-07/08 断链/响应丢失已覆盖；FI-09/10 磁盘满待补）。
+- [x] FI-06..10 通过（FI-06 离线队列、FI-07/08 故障代理断链、FI-09/10 合成 ENOSPC 注入）。
 - [x] PF-02 达标（100 MiB：上传 4.46 s + 下载 2.13 s，回环；目标 ≤ 60 s）。
 - [x] 中断 3 次续传成功且最终哈希一致（`ResumesAfterThreeConnectionDrops`）。
 - [x] TLS 关闭/证书错误时明确失败，不降级（`TlsTest.RejectsUntrustedCertificate`）。

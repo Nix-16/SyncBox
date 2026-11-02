@@ -1,5 +1,6 @@
 #include <syncbox/client/engine.hpp>
 
+#include <syncbox/common/fault.hpp>
 #include <syncbox/common/time.hpp>
 #include <syncbox/core/hash.hpp>
 #include <syncbox/core/path.hpp>
@@ -1202,6 +1203,9 @@ Result<void> SyncEngine::push_pending() {
 Result<void> SyncEngine::download_blob(const std::string& hash_hex,
                                        std::int64_t expected_size,
                                        const std::filesystem::path& target) {
+  if (fault::client_disk_full()) {
+    return make_error(ErrorCode::IoError, "injected client disk full");
+  }
   std::error_code error;
   std::filesystem::create_directories(target.parent_path(), error);
   if (error) {
