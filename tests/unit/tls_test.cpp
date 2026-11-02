@@ -7,16 +7,12 @@
 
 #include <boost/beast/http/verb.hpp>
 
-#include <openssl/evp.h>
-#include <openssl/pem.h>
-#include <openssl/x509.h>
-
-#include <cstdio>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <thread>
 
 namespace {
@@ -86,33 +82,11 @@ class WsTestHandler final : public syncbox::net::RequestHandler {
   return std::string(SYNCBOX_SOURCE_DIR) + "/tests/data/test-server.key";
 }
 
-[[nodiscard]] std::string certificate_fingerprint() {
-  FILE* file = std::fopen(certificate_path().c_str(), "r");
-  if (file == nullptr) {
-    return {};
-  }
-  X509* certificate = PEM_read_X509(file, nullptr, nullptr, nullptr);
-  std::fclose(file);
-  if (certificate == nullptr) {
-    return {};
-  }
-
-  unsigned char digest[EVP_MAX_MD_SIZE] = {};
-  unsigned int length = 0;
-  const int ok = X509_digest(certificate, EVP_sha256(), digest, &length);
-  X509_free(certificate);
-  if (ok != 1) {
-    return {};
-  }
-
-  constexpr char kHex[] = "0123456789abcdef";
-  std::string fingerprint;
-  for (unsigned int i = 0; i < length; ++i) {
-    fingerprint.push_back(kHex[(digest[i] >> 4U) & 0x0FU]);
-    fingerprint.push_back(kHex[digest[i] & 0x0FU]);
-  }
-  return fingerprint;
-}
+// SHA-256 fingerprint of tests/data/test-server.crt. Kept as a literal so the
+// test exercises the client-side pin check without depending on the platform's
+// PEM parser.
+inline constexpr std::string_view kTestCertificateFingerprint =
+    "390599d9cd7ff470541cc55e02d90e89c8bdd06053379291e96b83d224337174";
 
 }  // namespace
 
@@ -182,14 +156,13 @@ TEST(TlsTest, AcceptsMatchingCertificatePin) {
                                   syncbox::net::TlsConfig{certificate_path(), key_path()}, 1);
   ASSERT_TRUE(server.start());
 
-  const std::string fingerprint = certificate_fingerprint();
-  ASSERT_EQ(fingerprint.size(), 64U);
-
   syncbox::net::HttpClient client(
       "https://127.0.0.1:" + std::to_string(server.port()),
-      syncbox::net::TlsOptions{true, certificate_path(), "localhost", fingerprint});
+      syncbox::net::TlsOptions{true, certificate_path(), "localhost",
+                               std::string(kTestCertificateFingerprint)});
   auto response = client.request(http::verb::get, "/v1/health");
-  ASSERT_TRUE(response) << response.error().message;
+  ASSERT_TRUE(response) << "pin=" << kTestCertificateFingerprint
+                        << " error=" << response.error().message;
   EXPECT_EQ(response.value().status, 200);
 
   server.stop();

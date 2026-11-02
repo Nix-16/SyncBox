@@ -44,7 +44,7 @@ jobs:
         if: failure()
         shell: bash
         run: |
-          ctest --test-dir build -C ${{ matrix.build_type }} --rerun-failed --output-on-failure 2>&1 | grep -aE "FAILED|Failure|Value of|Expected|Actual|error:|what\\(\\)|Test #" | head -8 | while IFS= read -r line; do
+          ctest --test-dir build -C ${{ matrix.build_type }} --rerun-failed --output-on-failure 2>&1 | grep -aE "FAILED|Failure|Value of|Expected|Actual|error[:=]|what\\(\\)|Test #|Exception|aborted|Assertion|terminate" | head -8 | while IFS= read -r line; do
             echo "::error title=Rerun::$line"
           done || true
           log=build/Testing/Temporary/LastTest.log
@@ -88,7 +88,7 @@ jobs:
         if: failure()
         shell: bash
         run: |
-          ctest --test-dir build --rerun-failed --output-on-failure 2>&1 | grep -aE "FAILED|Failure|Value of|Expected|Actual|error:|what\\(\\)|Test #" | head -8 | while IFS= read -r line; do
+          ctest --test-dir build --rerun-failed --output-on-failure 2>&1 | grep -aE "FAILED|Failure|Value of|Expected|Actual|error[:=]|what\\(\\)|Test #|Exception|aborted|Assertion|terminate" | head -8 | while IFS= read -r line; do
             echo "::error title=Rerun::$line"
           done || true
           log=build/Testing/Temporary/LastTest.log
