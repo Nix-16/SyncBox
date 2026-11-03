@@ -25,10 +25,11 @@ constexpr std::size_t kMaxBodyBytes = 16 * 1024 * 1024;
 template <typename Stream>
 class Session : public std::enable_shared_from_this<Session<Stream>> {
  public:
-  Session(Stream stream, RequestHandler& handler)
-      : stream_(std::move(stream)), handler_(handler) {}
+  Session(Stream stream, RequestHandler& handler, std::chrono::milliseconds idle_timeout)
+      : stream_(std::move(stream)), handler_(handler), idle_timeout_(idle_timeout) {}
 
   void run() {
+    refresh_timeout();
     if constexpr (std::is_same_v<Stream, beast::ssl_stream<beast::tcp_stream>>) {
       auto self = this->shared_from_this();
       stream_.async_handshake(
@@ -46,7 +47,12 @@ class Session : public std::enable_shared_from_this<Session<Stream>> {
   }
 
  private:
+  void refresh_timeout() {
+    beast::get_lowest_layer(stream_).expires_after(idle_timeout_);
+  }
+
   void do_read() {
+    refresh_timeout();
     parser_.emplace();
     parser_->body_limit(kMaxBodyBytes);
 
@@ -122,6 +128,7 @@ class Session : public std::enable_shared_from_this<Session<Stream>> {
     response->keep_alive(keep_alive);
     response->prepare_payload();
 
+    refresh_timeout();
     http::async_write(
         stream_, *response,
         [self = this->shared_from_this(), response](boost::system::error_code error, std::size_t) {
@@ -147,6 +154,7 @@ class Session : public std::enable_shared_from_this<Session<Stream>> {
   beast::flat_buffer buffer_;
   std::optional<http::request_parser<http::string_body>> parser_;
   RequestHandler& handler_;
+  std::chrono::milliseconds idle_timeout_;
 };
 
 }  // namespace
@@ -255,12 +263,12 @@ void HttpServer::do_accept() {
       if (tls_.has_value() && ssl_context_) {
         beast::ssl_stream<beast::tcp_stream> stream(beast::tcp_stream(std::move(socket)),
                                                     *ssl_context_);
-        std::make_shared<Session<beast::ssl_stream<beast::tcp_stream>>>(std::move(stream),
-                                                                        handler_)
+        std::make_shared<Session<beast::ssl_stream<beast::tcp_stream>>>(
+            std::move(stream), handler_, idle_timeout_)
             ->run();
       } else {
         std::make_shared<Session<beast::tcp_stream>>(beast::tcp_stream(std::move(socket)),
-                                                     handler_)
+                                                     handler_, idle_timeout_)
             ->run();
       }
     }

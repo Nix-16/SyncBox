@@ -97,6 +97,10 @@ class HttpServer {
   // tests that need cancellation handlers to run before shutting down.
   void wait_idle(std::chrono::milliseconds timeout = std::chrono::seconds(1));
 
+  // Per-operation timeout for handshakes/reads/writes. Must be set before
+  // start(); defaults to 30 s (SECURITY.md §7, slowloris protection).
+  void set_idle_timeout(std::chrono::milliseconds timeout) { idle_timeout_ = timeout; }
+
   [[nodiscard]] std::uint16_t port() const noexcept { return bound_port_; }
 
  private:
@@ -110,6 +114,7 @@ class HttpServer {
   boost::asio::ip::tcp::acceptor acceptor_;
   std::vector<std::thread> threads_;
   std::atomic<bool> stopping_{false};
+  std::chrono::milliseconds idle_timeout_{std::chrono::seconds(30)};
   std::optional<TlsConfig> tls_;
   std::shared_ptr<boost::asio::ssl::context> ssl_context_;
 };
