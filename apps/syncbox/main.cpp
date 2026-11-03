@@ -135,7 +135,9 @@ struct Arguments {
 [[nodiscard]] int usage() {
   std::cout
       << "Usage:\n"
-      << "  syncbox login --server URL --token TOKEN [--root DIR] [--config PATH]\n"
+      << "  syncbox enroll --server URL --token ENROLLMENT_TOKEN [--name NAME]\n"
+      << "                 [--root DIR] [--config PATH]\n"
+      << "  syncbox login --server URL --token DEVICE_TOKEN [--root DIR] [--config PATH]\n"
       << "                [--ca-file FILE] [--insecure] [--tls-server-name NAME]\n"
       << "  syncbox sync [--config PATH] [--server URL] [--token TOKEN] [--root DIR]\n"
       << "                [--space ID] [--db PATH]\n"
@@ -175,6 +177,62 @@ struct Arguments {
     return std::nullopt;
   }
   return body["space_id"].get<std::string>();
+}
+
+[[nodiscard]] std::string platform_name() {
+#if defined(_WIN32)
+  return "windows";
+#elif defined(__APPLE__)
+  return "macos";
+#else
+  return "linux";
+#endif
+}
+
+int run_enroll(const Arguments& arguments) {
+  Config config;
+  config.server = option(arguments, "--server");
+  config.token = option(arguments, "--token");  // enrollment token
+  config.root = option(arguments, "--root", ".");
+  config.ca_file = option(arguments, "--ca-file");
+  config.verify_tls = arguments.options.count("--insecure") == 0;
+  config.tls_server_name = option(arguments, "--tls-server-name");
+  const std::string name = option(arguments, "--name", "syncbox-device");
+  if (config.server.empty() || config.token.empty()) {
+    return fail("enroll requires --server and --token (enrollment token)");
+  }
+
+  nlohmann::json body{{"enrollment_token", config.token},
+                      {"device_name", name},
+                      {"platform", platform_name()},
+                      {"app_version", std::string(syncbox::version_string())}};
+
+  syncbox::net::HttpClient client(config.server, tls_options_for(config));
+  auto response = client.request(http::verb::post, "/v1/enroll", body.dump());
+  if (!response) {
+    return fail(response.error().message);
+  }
+  if (response.value().status != 201) {
+    return fail("enrollment failed: " + response.value().body);
+  }
+
+  auto parsed = nlohmann::json::parse(response.value().body, nullptr, false);
+  if (parsed.is_discarded() || !parsed.contains("device_token") ||
+      !parsed.contains("space_id") || !parsed.contains("device_id")) {
+    return fail("enrollment response is malformed");
+  }
+  config.token = parsed["device_token"].get<std::string>();
+  config.space_id = parsed["space_id"].get<std::string>();
+
+  const std::filesystem::path config_path =
+      option(arguments, "--config", default_config_path().string());
+  if (!save_config(config_path, config)) {
+    return fail("cannot write config: " + config_path.string());
+  }
+
+  std::cout << "device " << parsed["device_id"].get<std::string>() << " space "
+            << config.space_id << " configured at " << config_path.string() << '\n';
+  return 0;
 }
 
 int run_login(const Arguments& arguments) {
@@ -418,6 +476,9 @@ int main(int argc, char** argv) {
   }
 
   const Arguments arguments = parse_arguments(argc, argv);
+  if (arguments.command == "enroll") {
+    return run_enroll(arguments);
+  }
   if (arguments.command == "login") {
     return run_login(arguments);
   }

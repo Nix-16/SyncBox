@@ -65,6 +65,42 @@ cmake --build build --config Debug
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
+## 快速开始（演示）
+
+```bash
+cmake --build --preset dev
+bash scripts/demo.sh          # 或 scripts/demo.sh build/dev
+```
+
+脚本会启动临时服务端、注册两个客户端，演示新建、修改与冲突副本，并在结束时清理。
+
+手动使用：
+
+```bash
+# 服务端
+syncboxd admin create-space --db server.db --name Demo      # 输出 space_id
+syncboxd admin enroll --db server.db --space <space_id>     # 输出 enrollment token
+syncboxd --db server.db --blob-root blobs --port 8443
+
+# 客户端（每台设备一次）
+syncbox enroll --server http://127.0.0.1:8443 --token <enrollment_token> \
+               --name laptop --root ~/SyncBox --config ~/alice.json
+syncbox sync  --config ~/alice.json
+syncbox watch --config ~/alice.json      # 持续同步
+syncbox status --config ~/alice.json
+syncbox conflicts --config ~/alice.json
+```
+
+## 打包
+
+```bash
+cmake --build --preset dev --target package
+ls build/dev/syncbox-*.tar.gz build/dev/syncbox-*.zip
+```
+
+包含 `syncbox`、`syncboxd`、演示脚本与 `docs/`。运行时依赖（Boost/OpenSSL/SQLite 等）
+需在目标机器提供；可执行文件当前为 Debug 构建时体积较大。
+
 ## 许可
 
 尚未确定。

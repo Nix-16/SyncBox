@@ -224,3 +224,17 @@ endif()
 include(GNUInstallDirs)
 install(TARGETS syncbox syncboxd
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+install(FILES README.md AGENTS.md DESTINATION ${CMAKE_INSTALL_DOCDIR})
+install(DIRECTORY docs/ DESTINATION ${CMAKE_INSTALL_DOCDIR})
+install(PROGRAMS scripts/demo.sh
+  DESTINATION ${CMAKE_INSTALL_BINDIR}
+  RENAME syncbox-demo)
+
+set(CPACK_PACKAGE_NAME "syncbox")
+set(CPACK_PACKAGE_VENDOR "SyncBox")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
+    "Cross-platform bidirectional file synchronization")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_GENERATOR "TGZ;ZIP")
+include(CPack)

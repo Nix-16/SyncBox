@@ -3,7 +3,7 @@
 | 项目 | 内容 |
 |---|---|
 | 报告日期 | 2026-10-27 |
-| 当前里程碑 | **M6 完成；M7 按用户决定跳过；M8 进行中** |
+| 当前里程碑 | **M8 基本完成（余 fuzz/CVE/tombstone/配额）；M9 进行中（非 GUI：打包与演示已可用）** |
 | 代码状态 | core + store + fs + net + server + client + 服务端限流/撤销；GUI 未实现（跳过） |
 | 构建状态 | **可构建**：CMake 3.22 + vcpkg（storage/unicode/crypto/networking/json） |
 | 测试状态 | 114 个测试；Linux Debug 与 ASan/UBSan 通过；三平台 CI 待运行 |
@@ -173,6 +173,15 @@ CI 运行（run [39631445766](https://github.com/Nix-16/SyncBox/actions/runs/396
 | 本地测试 | `ctest --preset dev` / `ctest --preset asan` | 114/114（Debug 与 ASan/UBSan） |
 
 > M8 尚未完成：路径 fuzz（本机无 clang/libFuzzer，见 O-15）、tombstone GC（O-16）、依赖 CVE 扫描、每 space 存储配额。
+
+### M9 进展证据（2026-11-03，非 GUI）
+
+| 项 | 实际命令/结果 |
+|---|---|
+| 客户端注册 | `syncbox enroll` 新增；配置文件权限 0600 |
+| 端到端演示 | `bash scripts/demo.sh`：新建、修改、冲突副本全部通过 |
+| 打包 | `cmake --build --preset dev --target package` 生成 `syncbox-0.1.0-Linux.tar.gz` / `.zip`（含可执行文件、docs、演示脚本） |
+| 待完成 | PF-01/03/04/05/06/09 基准、安装包运行时依赖打包、GUI（M7 跳过） |
 > 限流按令牌哈希 + 类别计数，默认值来自 PROTOCOL §6；GC 目前只清理 operations。
 > 管理端点由 `SYNCBOX_ADMIN_TOKEN` 保护，未配置时禁用；审计通过 `SYNCBOX_AUDIT_LOG` 配置。
 

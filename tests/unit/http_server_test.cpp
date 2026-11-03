@@ -41,15 +41,19 @@ TEST(HttpServerTest, ClosesSlowlorisConnectionAfterIdleTimeout) {
   const std::string partial = "GET /v1/health HTTP/1.1\r\nHost: test\r\n";
   asio::write(socket, asio::buffer(partial));
 
-  bool readable = false;
+  bool deadline_fired = false;
+  bool closed_by_server = false;
   asio::steady_timer deadline(context);
-  socket.async_wait(tcp::socket::wait_read, [&](boost::system::error_code error) {
-    readable = !error;
-    deadline.cancel();
-  });
+  socket.async_wait(tcp::socket::wait_read,
+                    [&](boost::system::error_code /*error*/) {
+                      // EOF and RST both mean the peer closed the connection.
+                      closed_by_server = !deadline_fired;
+                      deadline.cancel();
+                    });
   deadline.expires_after(std::chrono::seconds(2));
   deadline.async_wait([&](boost::system::error_code error) {
     if (!error) {
+      deadline_fired = true;
       boost::system::error_code ignored;
       socket.close(ignored);
     }
@@ -57,7 +61,7 @@ TEST(HttpServerTest, ClosesSlowlorisConnectionAfterIdleTimeout) {
 
   context.run();
 
-  EXPECT_TRUE(readable) << "server did not close an idle partial request";
+  EXPECT_TRUE(closed_by_server) << "server did not close an idle partial request";
   boost::system::error_code ignored;
   socket.close(ignored);
   server.stop();
