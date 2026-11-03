@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
 
+# A newer push supersedes queued/running builds on the same ref; this avoids
+# stacking several runs (and exhausting macOS runner capacity).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-test:
     name: ${{ matrix.os }} / ${{ matrix.build_type }}
