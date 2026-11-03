@@ -1,6 +1,7 @@
 #pragma once
 
 #include <syncbox/core/result.hpp>
+#include <syncbox/server/blob_store.hpp>
 #include <syncbox/store/server_store.hpp>
 
 #include <cstdint>
@@ -26,6 +27,10 @@ struct FsckReport {
 // number of removed rows.
 [[nodiscard]] Result<int> gc_operations(ServerStore& store, std::int64_t now_ms,
                                         int retention_days);
+
+// Removes blobs with ref_count == 0 created more than `older_than_hours` ago.
+[[nodiscard]] Result<int> gc_blobs(ServerStore& store, BlobStore& blobs,
+                                   std::int64_t now_ms, int older_than_hours);
 
 // Consistent online backup using SQLite's backup API.
 [[nodiscard]] Result<void> backup_database(const std::string& source_path,

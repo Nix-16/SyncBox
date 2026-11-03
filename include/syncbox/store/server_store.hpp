@@ -188,6 +188,9 @@ class ServerStore {
   [[nodiscard]] Result<void> increment_blob_ref(std::string_view content_hash);
   [[nodiscard]] Result<bool> blob_referenced_in_space(std::string_view space_id,
                                                       std::string_view content_hash);
+  [[nodiscard]] Result<void> delete_blob(std::string_view content_hash);
+  [[nodiscard]] Result<std::vector<std::string>> list_gc_blob_candidates(
+      std::int64_t created_before, int limit);
 
  private:
   explicit ServerStore(Database db) noexcept : db_(std::move(db)) {}

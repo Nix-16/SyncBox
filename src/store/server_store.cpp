@@ -954,6 +954,53 @@ Result<bool> ServerStore::blob_referenced_in_space(std::string_view space_id,
   return step.value();
 }
 
+Result<void> ServerStore::delete_blob(std::string_view content_hash) {
+  auto statement =
+      Statement::prepare(db_, "DELETE FROM blobs WHERE content_hash=?;");
+  if (!statement) {
+    return statement.error();
+  }
+  if (auto r = check(statement.value().bind_text(1, content_hash)); !r) {
+    return r.error();
+  }
+  auto step = statement.value().step();
+  if (!step) {
+    return step.error();
+  }
+  return Result<void>{};
+}
+
+Result<std::vector<std::string>> ServerStore::list_gc_blob_candidates(
+    std::int64_t created_before, int limit) {
+  auto statement = Statement::prepare(
+      db_,
+      "SELECT content_hash FROM blobs WHERE ref_count=0 AND created_at < ? "
+      "ORDER BY created_at LIMIT ?;");
+  if (!statement) {
+    return statement.error();
+  }
+  auto& stmt = statement.value();
+  if (auto r = check(stmt.bind_int64(1, created_before)); !r) {
+    return r.error();
+  }
+  if (auto r = check(stmt.bind_int64(2, limit)); !r) {
+    return r.error();
+  }
+
+  std::vector<std::string> hashes;
+  while (true) {
+    auto step = stmt.step();
+    if (!step) {
+      return step.error();
+    }
+    if (!step.value()) {
+      break;
+    }
+    hashes.push_back(stmt.column_text(0));
+  }
+  return hashes;
+}
+
 Result<void> ServerStore::increment_blob_ref(std::string_view content_hash) {
   auto statement =
       Statement::prepare(db_, "UPDATE blobs SET ref_count=ref_count+1 WHERE content_hash=?;");

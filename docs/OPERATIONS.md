@@ -40,7 +40,7 @@ syncboxd --db /var/lib/syncbox/server.db \
 | `syncboxd admin enroll --db PATH --space ID [--ttl-hours N]` | 签发一次性注册令牌 |
 | `syncboxd admin revoke --db PATH --device ID [--reason TEXT]` | 撤销设备（立即影响后续 HTTP 请求） |
 | `syncboxd admin fsck --db PATH` | 完整性检查 |
-| `syncboxd admin gc --db PATH [--operations-days N]` | 清理过期幂等记录（默认 7 天） |
+| `syncboxd admin gc --db PATH [--blob-root PATH] [--operations-days N]` | 清理过期幂等记录与未引用 blob |
 | `syncboxd admin backup --db PATH --out BACKUP` | 一致性备份 |
 
 ### 2.1 通过 HTTP 撤销设备
@@ -90,16 +90,20 @@ ok
 ## 4. GC
 
 ```bash
-syncboxd admin gc --db /var/lib/syncbox/server.db --operations-days 7
-# operations_removed=123
+syncboxd admin gc --db /var/lib/syncbox/server.db \
+                  --blob-root /var/lib/syncbox/blobs \
+                  --operations-days 7
+# operations_removed=123 blobs_removed=4
 ```
 
-当前只清理 `operations`（幂等回放记录）。以下对象**尚未自动 GC**：
+清理内容：
 
-- `change_log` 与 tombstone：依赖设备 `last_ack_seq` 与 90 天水位（DATABASE §2.5），M9 实现；
-- 未被引用的 blob：需要可靠引用计数/GC 水位，M9 实现。
+- `operations`：超过 `--operations-days`（默认 7 天）的幂等回放记录；
+- `blobs`：`ref_count=0` 且创建超过 24 小时的 blob（DB 行 + 块文件）。
 
-在实现前，磁盘增长主要来自变更历史与 blob；请监控磁盘并保留备份。
+**尚未自动 GC**：`change_log` 与 tombstone。它们依赖所有活跃设备的
+`last_ack_seq` 与 90 天水位（DATABASE §2.5），留待 M9。在此之前变更历史会持续增长，
+请监控磁盘并保留备份。
 
 ---
 
@@ -163,7 +167,7 @@ syncboxd ...
 | 客户端 403 `DEVICE_REVOKED` | `admin revoke` 后未重新注册 |
 | 客户端 410 `CURSOR_EXPIRED` | 变更日志已 GC；客户端应执行全量快照（已实现） |
 | fsck 报告缺失 blob | 从备份恢复 blobs，或让客户端重新上传（服务端会拒绝缺失 blob 的提交） |
-| 磁盘将满 | 暂停写入、扩容；当前 GC 不能回收 blob |
+| 磁盘将满 | 运行 `admin gc` 回收未引用 blob；change_log 仍需手工归档/扩容 |
 
 ---
 
@@ -171,6 +175,6 @@ syncboxd ...
 
 - 结构化审计日志与脱敏测试；
 - WS 会话在设备撤销后立即断开；
-- blob 与 change_log/tombstone 的完整 GC；
-- 路径 fuzz 与依赖 CVE 扫描；
+- change_log/tombstone 的 GC（需设备 ACK 水位）；
+- 路径 fuzz（缺 clang）与依赖 CVE 扫描；
 - 监控指标与告警。

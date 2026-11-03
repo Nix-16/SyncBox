@@ -116,6 +116,41 @@ Result<int> gc_operations(ServerStore& store, std::int64_t now_ms, int retention
   return store.db().changes();
 }
 
+Result<int> gc_blobs(ServerStore& store, BlobStore& blobs, std::int64_t now_ms,
+                     int older_than_hours) {
+  if (older_than_hours < 0) {
+    return make_error(ErrorCode::BadRequest, "older_than_hours must be >= 0");
+  }
+  const std::int64_t cutoff =
+      now_ms - static_cast<std::int64_t>(older_than_hours) * 3600 * 1000;
+
+  int removed = 0;
+  while (true) {
+    auto candidates = store.list_gc_blob_candidates(cutoff, 1000);
+    if (!candidates) {
+      return candidates.error();
+    }
+    if (candidates.value().empty()) {
+      break;
+    }
+    for (const auto& hash : candidates.value()) {
+      auto files = blobs.remove_files(hash);
+      if (!files) {
+        return files.error();
+      }
+      auto row = store.delete_blob(hash);
+      if (!row) {
+        return row.error();
+      }
+      ++removed;
+    }
+    if (candidates.value().size() < 1000) {
+      break;
+    }
+  }
+  return removed;
+}
+
 Result<void> backup_database(const std::string& source_path,
                              const std::string& destination_path) {
   sqlite3* source = nullptr;

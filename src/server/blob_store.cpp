@@ -43,6 +43,20 @@ namespace {
 
 }  // namespace
 
+Result<void> BlobStore::remove_files(std::string_view content_hash_text) {
+  auto hash = canonical_hash(content_hash_text);
+  if (!hash) {
+    return hash.error();
+  }
+  std::error_code error;
+  std::filesystem::remove_all(root_ / hash.value(), error);
+  if (error) {
+    return make_error(ErrorCode::IoError,
+                      "cannot remove blob files: " + error.message());
+  }
+  return Result<void>{};
+}
+
 Result<void> BlobStore::prepare() {
   std::error_code error;
   std::filesystem::create_directories(root_, error);

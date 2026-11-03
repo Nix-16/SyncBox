@@ -76,6 +76,7 @@ int run_admin(int argc, char** argv) {
   std::string device_id;
   std::string reason = "revoked by administrator";
   std::string out_path;
+  std::string blob_root = "blobs";
   int ttl_hours = 24;
   int operations_days = 7;
 
@@ -121,6 +122,10 @@ int run_admin(int argc, char** argv) {
       auto value = next_value(argc, argv, i);
       if (!value) return fail("--out needs a value");
       out_path = *value;
+    } else if (argument == "--blob-root") {
+      auto value = next_value(argc, argv, i);
+      if (!value) return fail("--blob-root needs a value");
+      blob_root = *value;
     } else if (command.empty()) {
       command = argument;
     } else {
@@ -216,7 +221,18 @@ int run_admin(int argc, char** argv) {
     if (!removed) {
       return fail(removed.error().message);
     }
-    std::cout << "operations_removed=" << removed.value() << '\n';
+    syncbox::server::BlobStore blobs(store.value(), blob_root);
+    auto prepared = blobs.prepare();
+    if (!prepared) {
+      return fail(prepared.error().message);
+    }
+    auto removed_blobs = syncbox::server::gc_blobs(store.value(), blobs,
+                                                   syncbox::now_millis(), 24);
+    if (!removed_blobs) {
+      return fail(removed_blobs.error().message);
+    }
+    std::cout << "operations_removed=" << removed.value()
+              << " blobs_removed=" << removed_blobs.value() << '\n';
     return 0;
   }
 

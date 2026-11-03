@@ -2,10 +2,13 @@
 
 #include <syncbox/common/time.hpp>
 #include <syncbox/core/uuid.hpp>
+#include <syncbox/core/hash.hpp>
+#include <syncbox/server/blob_store.hpp>
 #include <syncbox/server/maintenance.hpp>
 #include <syncbox/store/migrations.hpp>
 #include <syncbox/store/server_store.hpp>
 
+#include <fstream>
 #include <string>
 
 #include "test_support.hpp"
@@ -90,6 +93,61 @@ TEST(MaintenanceTest, GcRemovesOnlyExpiredOperations) {
   auto remaining = syncbox::test::scalar_int(
       store.value().db(), "SELECT COUNT(*) FROM operations;");
   EXPECT_EQ(remaining, 1);
+}
+
+TEST(MaintenanceTest, GcRemovesOnlyUnreferencedOldBlobs) {
+  TempDirectory directory;
+  auto store = syncbox::ServerStore::open(directory.file("server.db").string());
+  ASSERT_TRUE(store);
+  ASSERT_TRUE(store.value().migrate());
+
+  syncbox::server::BlobStore blobs(store.value(), directory.file("blobs"));
+  ASSERT_TRUE(blobs.prepare());
+
+  const std::int64_t now = syncbox::now_millis();
+  auto make_blob = [&](const std::string& content, std::int64_t created_at,
+                       bool referenced) {
+    auto hash = syncbox::sha256(content);
+    EXPECT_TRUE(hash);
+    const std::string hex = hash.value().to_hex();
+
+    syncbox::BlobRecord blob;
+    blob.content_hash = hex;
+    blob.size = static_cast<std::int64_t>(content.size());
+    blob.chunk_size = static_cast<std::int64_t>(content.size());
+    blob.chunk_count = 1;
+    blob.state = "uploading";
+    blob.created_at = created_at;
+    EXPECT_TRUE(store.value().upsert_uploading_blob(blob));
+    EXPECT_TRUE(store.value().mark_blob_complete(hex, created_at));
+
+    const auto directory_path = blobs.root() / hex;
+    std::filesystem::create_directories(directory_path);
+    std::ofstream stream(directory_path / "0.chunk", std::ios::binary);
+    stream << content;
+    stream.close();
+
+    if (referenced) {
+      EXPECT_TRUE(store.value().increment_blob_ref(hex));
+    }
+    return hex;
+  };
+
+  const std::string old_hash = make_blob("old", now - 48LL * 3600 * 1000, false);
+  const std::string young_hash = make_blob("young", now - 3600 * 1000, false);
+  const std::string referenced_hash = make_blob("ref", now - 48LL * 3600 * 1000, true);
+
+  auto removed = syncbox::server::gc_blobs(store.value(), blobs, now, 24);
+  ASSERT_TRUE(removed) << removed.error().message;
+  EXPECT_EQ(removed.value(), 1);
+
+  EXPECT_FALSE(std::filesystem::exists(blobs.root() / old_hash));
+  auto old_row = store.value().find_blob(old_hash);
+  ASSERT_TRUE(old_row);
+  EXPECT_FALSE(old_row.value().has_value());
+
+  EXPECT_TRUE(std::filesystem::exists(blobs.root() / young_hash));
+  EXPECT_TRUE(std::filesystem::exists(blobs.root() / referenced_hash));
 }
 
 TEST(MaintenanceTest, BackupProducesUsableDatabase) {

@@ -40,6 +40,12 @@ class BlobStore {
 
   [[nodiscard]] Result<std::int64_t> size_of(std::string_view content_hash);
 
+  // Removes the chunk directory for a blob. Database rows are handled by
+  // ServerStore::delete_blob.
+  [[nodiscard]] Result<void> remove_files(std::string_view content_hash);
+
+  [[nodiscard]] const std::filesystem::path& root() const noexcept { return root_; }
+
   // Reads [offset, offset+length). length < 0 means "to the end".
   [[nodiscard]] Result<std::string> read_range(std::string_view content_hash,
                                                std::int64_t offset, std::int64_t length);
