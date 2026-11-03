@@ -6,7 +6,7 @@
 | 当前里程碑 | **M6 完成；M7 按用户决定跳过；M8 进行中** |
 | 代码状态 | core + store + fs + net + server + client + 服务端限流/撤销；GUI 未实现（跳过） |
 | 构建状态 | **可构建**：CMake 3.22 + vcpkg（storage/unicode/crypto/networking/json） |
-| 测试状态 | 112 个测试；Linux Debug 与 ASan/UBSan 通过；三平台 CI 待运行 |
+| 测试状态 | 113 个测试；Linux Debug 与 ASan/UBSan 通过；三平台 CI 待运行 |
 | 版本控制 | Git 已初始化，远端 `github.com/Nix-16/SyncBox` |
 
 > 本文档是项目真实状态的唯一依据。任何“已完成”的声明必须在此处有对应条目与证据（文件路径、命令输出、测试名称）。**当前没有任何同步功能可用。**
@@ -167,9 +167,11 @@ CI 运行（run [39631445766](https://github.com/Nix-16/SyncBox/actions/runs/396
 | blob GC | `MaintenanceTest.GcRemovesOnlyUnreferencedOldBlobs` | 仅删除 24h 且 ref_count=0 的 blob（文件+行） |
 | change_log GC | `MaintenanceTest.GcChangeLogRespectsAckWatermark` | 未 ACK 设备阻止回收；水位写入只增不减 |
 | 游标过期 | `ServerApiTest.ExpiredCursorReturns410` | `since < min_retained_seq` 返回 410 + details |
-| 本地测试 | `ctest --preset dev` / `ctest --preset asan` | 112/112（Debug 与 ASan/UBSan） |
+| 路径拒绝集 | `ServerApiTest.RejectsPathTraversalAtApi` | SECURITY §5.3 的 27 个样本全部 422 `PATH_INVALID` |
+| 超大请求 | `ServerApiTest.RejectsOversizedJsonBody` | 2 MiB JSON 返回 413 `PAYLOAD_TOO_LARGE` |
+| 本地测试 | `ctest --preset dev` / `ctest --preset asan` | 113/113（Debug 与 ASan/UBSan） |
 
-> M8 尚未完成：路径 fuzz（本机无 clang/libFuzzer，见 O-15）、tombstone GC（O-16）、配额与慢速攻击防护。
+> M8 尚未完成：路径 fuzz（本机无 clang/libFuzzer，见 O-15）、tombstone GC（O-16）、依赖 CVE 扫描、配额与慢速攻击防护。
 > 限流按令牌哈希 + 类别计数，默认值来自 PROTOCOL §6；GC 目前只清理 operations。
 > 管理端点由 `SYNCBOX_ADMIN_TOKEN` 保护，未配置时禁用；审计通过 `SYNCBOX_AUDIT_LOG` 配置。
 

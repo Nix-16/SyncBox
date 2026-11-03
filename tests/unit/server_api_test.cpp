@@ -442,8 +442,35 @@ TEST_F(ServerApiTest, WebSocketReceivesChangeHint) {
 TEST_F(ServerApiTest, RejectsPathTraversalAtApi) {
   const std::string token = enroll_device();
   const auto hash = make_blob("path-check");
+  // SECURITY.md §5.3 traversal/invalid-name set.
   const std::vector<std::string> invalid_paths = {
-      "../etc/passwd", "/absolute/path", "a\\b", "CON", "a//b", "dir/../file", "file."};
+      "../etc/passwd",
+      "..\\..\\windows\\system32\\config\\sam",
+      "/absolute/path",
+      "C:\\Windows\\System32",
+      "\\\\server\\share\\file",
+      "a/../../b",
+      "a/./b",
+      "a//b",
+      "a/",
+      ".hidden/..",
+      "CON",
+      "con.txt",
+      "NUL",
+      "COM1",
+      "LPT9.log",
+      "aux.",
+      "file.",
+      "file ",
+      "a:b",
+      "a|b",
+      "a*b",
+      "a?b",
+      "a<b",
+      "a>b",
+      "a\"b",
+      std::string("a\x01b"),
+      std::string(1100, 'a')};
   for (const auto& path : invalid_paths) {
     nlohmann::json create{{"op_id", syncbox::generate_uuid_v7()},
                           {"kind", "create"},
@@ -462,6 +489,16 @@ TEST_F(ServerApiTest, RejectsPathTraversalAtApi) {
               "PATH_INVALID")
         << path;
   }
+}
+
+TEST_F(ServerApiTest, RejectsOversizedJsonBody) {
+  const std::string token = enroll_device();
+  const std::string body(2 * 1024 * 1024, 'x');
+  auto response = http_call(server_->port(), http::verb::post,
+                            "/v1/spaces/" + space_id_ + "/ops", body, token);
+  EXPECT_EQ(response.status, 413);
+  EXPECT_EQ(nlohmann::json::parse(response.body)["error"]["code"].get<std::string>(),
+            "PAYLOAD_TOO_LARGE");
 }
 
 TEST_F(ServerApiTest, RejectsCorruptChunk) {
