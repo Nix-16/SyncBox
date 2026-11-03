@@ -6,7 +6,7 @@
 | 当前里程碑 | **M6 完成；M7 按用户决定跳过；M8 进行中** |
 | 代码状态 | core + store + fs + net + server + client + 服务端限流/撤销；GUI 未实现（跳过） |
 | 构建状态 | **可构建**：CMake 3.22 + vcpkg（storage/unicode/crypto/networking/json） |
-| 测试状态 | 106 个测试；Linux Debug 与 ASan/UBSan 通过；三平台 CI 待运行 |
+| 测试状态 | 107 个测试；Linux Debug 与 ASan/UBSan 通过；三平台 CI 待运行 |
 | 版本控制 | Git 已初始化，远端 `github.com/Nix-16/SyncBox` |
 
 > 本文档是项目真实状态的唯一依据。任何“已完成”的声明必须在此处有对应条目与证据（文件路径、命令输出、测试名称）。**当前没有任何同步功能可用。**
@@ -162,10 +162,12 @@ CI 运行（run [39631445766](https://github.com/Nix-16/SyncBox/actions/runs/396
 | GC | `MaintenanceTest.GcRemovesOnlyExpiredOperations` | 仅删除超过保留期的幂等记录 |
 | 备份 | `MaintenanceTest.BackupProducesUsableDatabase` | SQLite backup API 生成可打开副本 |
 | 运维文档 | `docs/OPERATIONS.md` | fsck/GC/备份/恢复流程 |
-| 本地测试 | `ctest --preset dev` / `ctest --preset asan` | 106/106（Debug 与 ASan/UBSan） |
+| 管理撤销 | `ServerApiTest.AdminRevokeRequiresTokenAndClosesWebSocket` | 无 admin token 401；撤销后 204、WS 关闭、后续请求 403 |
+| 本地测试 | `ctest --preset dev` / `ctest --preset asan` | 107/107（Debug 与 ASan/UBSan） |
 
-> M8 尚未完成：审计日志与脱敏测试、路径 fuzz、WS 撤销断开、blob/change_log GC。
+> M8 尚未完成：审计日志与脱敏测试、路径 fuzz、blob/change_log GC。
 > 限流按令牌哈希 + 类别计数，默认值来自 PROTOCOL §6；GC 目前只清理 operations。
+> 管理端点由 `SYNCBOX_ADMIN_TOKEN` 保护，未配置时禁用。
 
 ### M4 进展证据（2026-10-27，Linux aarch64）
 

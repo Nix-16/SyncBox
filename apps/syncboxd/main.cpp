@@ -13,6 +13,7 @@
 
 #include <chrono>
 #include <csignal>
+#include <cstdlib>
 #include <cstdint>
 #include <iostream>
 #include <memory>
@@ -295,7 +296,10 @@ int run_server(int argc, char** argv) {
   syncbox::server::AuthService auth(store.value());
   syncbox::server::OpService ops(store.value());
   syncbox::net::WsHub hub;
-  syncbox::server::Api api(store.value(), auth, ops, blobs, hub);
+  const char* admin_token_env = std::getenv("SYNCBOX_ADMIN_TOKEN");
+  const std::string admin_token = admin_token_env != nullptr ? admin_token_env : "";
+  syncbox::server::Api api(store.value(), auth, ops, blobs, hub,
+                           syncbox::server::RateLimitConfig{}, admin_token);
   const bool loopback = options.listen == "127.0.0.1" || options.listen == "::1" ||
                         options.listen == "localhost";
   if (options.tls_cert.empty() != options.tls_key.empty()) {

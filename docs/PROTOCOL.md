@@ -518,6 +518,26 @@
 - 断线重连采用指数退避（1s → 60s，±20% 抖动），重连后立即拉取变更。
 - WS 不可用期间客户端每 30 秒轮询一次。
 
+### 3.11 `DELETE /v1/devices/{device_id}`
+
+管理员撤销设备。请求必须携带 **admin token**（服务端环境变量
+`SYNCBOX_ADMIN_TOKEN`，恒定时间比较），不是设备 token：
+
+```http
+DELETE /v1/devices/0192f0c4-2222-... HTTP/1.1
+Authorization: Bearer <SYNCBOX_ADMIN_TOKEN>
+```
+
+响应 `204`（无 body）。规则：
+
+- `SYNCBOX_ADMIN_TOKEN` 未配置 → 该端点始终返回 `401 AUTH_REQUIRED`；
+- token 错误 → `401 AUTH_REQUIRED`；
+- 设备不存在 → 仍返回 `204`（幂等，不暴露存在性）；
+- 成功后设备状态置为 `revoked`，其 HTTP 请求立即返回 `403 DEVICE_REVOKED`，
+  已建立的 WebSocket 会话被服务端主动关闭。
+
+> 生产部署应仅允许受信网络访问该端点，或通过反向代理限制来源。
+
 ---
 
 ## 4. 典型交互时序

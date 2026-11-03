@@ -52,7 +52,7 @@ class WsTestHandler final : public syncbox::net::RequestHandler {
       const syncbox::net::HttpRequest&) override {
     auto session = std::make_shared<
         syncbox::net::WsSession<boost::beast::tcp_stream>>(std::move(stream), hub_, "space",
-                                                           Seq{0});
+                                                           "test-device", Seq{0});
     hub_.add(session);
     session->run(std::move(request));
     return syncbox::net::UpgradeResult{true, {}};
@@ -65,7 +65,7 @@ class WsTestHandler final : public syncbox::net::RequestHandler {
     using Stream = boost::beast::ssl_stream<boost::beast::tcp_stream>;
     auto session =
         std::make_shared<syncbox::net::WsSession<Stream>>(std::move(stream), hub_, "space",
-                                                          Seq{0});
+                                                          "test-device", Seq{0});
     hub_.add(session);
     session->run(std::move(request));
     return syncbox::net::UpgradeResult{true, {}};

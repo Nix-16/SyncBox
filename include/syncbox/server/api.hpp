@@ -16,9 +16,9 @@ namespace syncbox::server {
 class Api final : public net::RequestHandler {
  public:
   Api(ServerStore& store, AuthService& auth, OpService& ops, BlobStore& blobs,
-      net::WsHub& hub, RateLimitConfig limits = {})
+      net::WsHub& hub, RateLimitConfig limits = {}, std::string admin_token = {})
       : store_(store), auth_(auth), ops_(ops), blobs_(blobs), hub_(hub),
-        rate_limits_(limits) {}
+        rate_limits_(limits), admin_token_(std::move(admin_token)) {}
 
   // Replaces the per-device limits and clears bucket state (tests/ops).
   void set_rate_limits(RateLimitConfig limits);
@@ -38,6 +38,7 @@ class Api final : public net::RequestHandler {
  private:
   struct UpgradeContext {
     std::string space_id;
+    std::string device_id;
     Seq seq;
   };
 
@@ -53,6 +54,8 @@ class Api final : public net::RequestHandler {
   std::mutex mutex_;
   RateLimitConfig rate_limits_;
   RateLimiter rate_limiter_;
+  // When non-empty, DELETE /v1/devices/{id} requires this bearer token.
+  std::string admin_token_;
 };
 
 }  // namespace syncbox::server

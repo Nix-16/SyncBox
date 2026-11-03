@@ -83,6 +83,14 @@ struct ParsedTarget {
   return std::nullopt;
 }
 
+[[nodiscard]] bool secure_equal(std::string_view lhs, std::string_view rhs) {
+  if (lhs.size() != rhs.size()) {
+    return false;
+  }
+  return constant_time_equal(reinterpret_cast<const std::uint8_t*>(lhs.data()),
+                             reinterpret_cast<const std::uint8_t*>(rhs.data()), lhs.size());
+}
+
 [[nodiscard]] std::optional<std::string> bearer_token(const net::HttpRequest& request) {
   const auto authorization = header_value(request, "authorization");
   if (!authorization.has_value()) {
@@ -217,7 +225,7 @@ Result<Api::UpgradeContext> Api::validate_upgrade(const net::HttpRequest& metada
   if (!latest) {
     return latest.error();
   }
-  return UpgradeContext{space_id, latest.value()};
+  return UpgradeContext{space_id, device.value().device_id, latest.value()};
 }
 
 net::UpgradeResult Api::handle_upgrade(
@@ -234,7 +242,8 @@ net::UpgradeResult Api::handle_upgrade(
   }
 
   auto session = std::make_shared<net::WsSession<boost::beast::tcp_stream>>(
-      std::move(stream), hub_, context.value().space_id, context.value().seq);
+      std::move(stream), hub_, context.value().space_id, context.value().device_id,
+      context.value().seq);
   hub_.add(session);
   session->run(std::move(request));
   result.upgraded = true;
@@ -256,7 +265,8 @@ net::UpgradeResult Api::handle_upgrade(
 
   auto session =
       std::make_shared<net::WsSession<boost::beast::ssl_stream<boost::beast::tcp_stream>>>(
-          std::move(stream), hub_, context.value().space_id, context.value().seq);
+          std::move(stream), hub_, context.value().space_id, context.value().device_id,
+          context.value().seq);
   hub_.add(session);
   session->run(std::move(request));
   result.upgraded = true;
@@ -319,6 +329,30 @@ net::HttpResponse Api::handle(const net::HttpRequest& request) {
         }
       }
     }
+  }
+
+  if (request.method == http::verb::delete_ &&
+      target.path.rfind("/v1/devices/", 0) == 0) {
+    constexpr std::string_view kPrefix = "/v1/devices/";
+    const std::string device_id = target.path.substr(kPrefix.size());
+    if (device_id.empty() || device_id.find('/') != std::string::npos) {
+      return error_response(ErrorCode::NotFound, "route not found");
+    }
+    const auto token = bearer_token(request);
+    if (admin_token_.empty() || !token.has_value() ||
+        !secure_equal(*token, admin_token_)) {
+      return error_response(ErrorCode::AuthRequired, "admin token required");
+    }
+    auto revoked = auth_.revoke(device_id, "revoked via admin API");
+    if (!revoked) {
+      return error_response(revoked.error());
+    }
+    hub_.close_device(device_id);
+
+    net::HttpResponse response;
+    response.status = 204;
+    response.body.clear();
+    return response;
   }
 
   if (is_get(request) && target.path == "/v1/health") {

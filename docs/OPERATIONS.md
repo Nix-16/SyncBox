@@ -43,6 +43,23 @@ syncboxd --db /var/lib/syncbox/server.db \
 | `syncboxd admin gc --db PATH [--operations-days N]` | 清理过期幂等记录（默认 7 天） |
 | `syncboxd admin backup --db PATH --out BACKUP` | 一致性备份 |
 
+### 2.1 通过 HTTP 撤销设备
+
+启动服务端时设置管理员令牌（未设置则端点禁用）：
+
+```bash
+export SYNCBOX_ADMIN_TOKEN="$(openssl rand -base64 32)"
+syncboxd ...
+```
+
+```bash
+curl -X DELETE https://sync.example.com:8443/v1/devices/<device_id> \
+     -H "Authorization: Bearer $SYNCBOX_ADMIN_TOKEN"
+# 204；该设备的 HTTP 请求立即 403，WebSocket 被关闭
+```
+
+建议仅从受信网络访问该端点。
+
 ---
 
 ## 3. fsck

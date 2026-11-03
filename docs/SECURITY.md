@@ -121,6 +121,10 @@ v1 只有两种角色：
 
 **没有**跨 space 访问；所有查询强制带 `space_id` 且与设备绑定。
 
+**管理员 HTTP 通道（M8）**：`DELETE /v1/devices/{id}` 使用独立的管理员令牌，
+由服务端环境变量 `SYNCBOX_ADMIN_TOKEN` 配置（未配置时端点恒返回 401）。
+比较使用恒定时间实现；该端点应限制在受信网络/反向代理之后。
+
 ### 3.4 设备撤销
 
 - `DELETE /v1/devices/{id}`（M8；v1 通过本地 CLI `syncboxd admin revoke`）。
@@ -128,6 +132,8 @@ v1 只有两种角色：
 - 不删除设备行（保留审计与游标历史）。
 - 已建立的 WebSocket 连接在下次心跳时被关闭。
 - 撤销后：401/403 立即返回，客户端停止同步并提示重新注册（需新 enrollment token）。
+- 通过管理 API 撤销时，服务端同时关闭该设备已建立的 WebSocket 会话
+  （`WsHub::close_device`），不必等待心跳。
 
 ---
 

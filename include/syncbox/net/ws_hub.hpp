@@ -14,6 +14,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <chrono>
+#include <condition_variable>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -36,7 +38,9 @@ class WsConnection {
  public:
   virtual ~WsConnection() = default;
   virtual void send_change(Seq seq) = 0;
+  virtual void request_close() = 0;
   [[nodiscard]] virtual const std::string& space_id() const noexcept = 0;
+  [[nodiscard]] virtual const std::string& device_id() const noexcept = 0;
 };
 
 // One authenticated WebSocket connection, generic over the underlying stream
@@ -47,10 +51,15 @@ class WsHub {
   void remove(WsConnection* session);
   void notify_change(const std::string& space_id, Seq seq);
 
+  // Closes every session belonging to a revoked device (SECURITY.md §3.4).
+  void close_device(const std::string& device_id);
+
   [[nodiscard]] std::size_t size() const;
+  [[nodiscard]] bool wait_empty(std::chrono::milliseconds timeout) const;
 
  private:
   mutable std::mutex mutex_;
+  mutable std::condition_variable empty_condition_;
   std::vector<std::weak_ptr<WsConnection>> sessions_;
 };
 
@@ -58,9 +67,10 @@ template <typename Stream>
 class WsSession final : public WsConnection,
                         public std::enable_shared_from_this<WsSession<Stream>> {
  public:
-  WsSession(Stream&& stream, WsHub& hub, std::string space_id, Seq initial_seq)
+  WsSession(Stream&& stream, WsHub& hub, std::string space_id, std::string device_id,
+            Seq initial_seq)
       : websocket_(std::move(stream)), hub_(hub), space_id_(std::move(space_id)),
-        initial_seq_(initial_seq) {}
+        device_id_(std::move(device_id)), initial_seq_(initial_seq) {}
 
   void run(http::request<http::string_body>&& request) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -107,8 +117,20 @@ class WsSession final : public WsConnection,
     });
   }
 
+  void request_close() override {
+    auto self = this->shared_from_this();
+    boost::asio::post(websocket_.get_executor(), [self] {
+      std::lock_guard<std::mutex> lock(self->mutex_);
+      self->close_locked();
+    });
+  }
+
   [[nodiscard]] const std::string& space_id() const noexcept override {
     return space_id_;
+  }
+
+  [[nodiscard]] const std::string& device_id() const noexcept override {
+    return device_id_;
   }
 
  private:
@@ -209,6 +231,7 @@ class WsSession final : public WsConnection,
   websocket::stream<Stream> websocket_;
   WsHub& hub_;
   std::string space_id_;
+  std::string device_id_;
   Seq initial_seq_;
   beast::flat_buffer buffer_;
   std::deque<std::string> outbox_;

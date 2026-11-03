@@ -18,6 +18,7 @@
 #include <boost/beast/http.hpp>
 
 #include <atomic>
+#include <chrono>
 #include <cctype>
 #include <map>
 #include <memory>
@@ -588,4 +589,32 @@ TEST_F(ServerApiTest, RevokedDeviceIsRejected) {
   EXPECT_EQ(me.status, 403);
   auto body = nlohmann::json::parse(me.body);
   EXPECT_EQ(body["error"]["code"].get<std::string>(), "DEVICE_REVOKED");
+}
+
+TEST_F(ServerApiTest, AdminRevokeRequiresTokenAndClosesWebSocket) {
+  // Rebuild the API/server with an admin token enabled.
+  server_.reset();
+  api_.reset();
+  api_ = std::make_unique<syncbox::server::Api>(
+      *store_, *auth_, *ops_, *blobs_, hub_, syncbox::server::RateLimitConfig{},
+      "admin-secret");
+  server_ = std::make_unique<syncbox::net::HttpServer>("127.0.0.1", 0, *api_, 2);
+  ASSERT_TRUE(server_->start());
+
+  const std::string token = enroll_device();
+  WsClient client(server_->port(), space_id_, token);
+  ASSERT_EQ(hub_.size(), 1U);
+
+  auto denied = http_call(server_->port(), http::verb::delete_,
+                          "/v1/devices/" + device_id_, {}, token);
+  EXPECT_EQ(denied.status, 401);
+
+  auto revoked = http_call(server_->port(), http::verb::delete_,
+                           "/v1/devices/" + device_id_, {}, "admin-secret");
+  EXPECT_EQ(revoked.status, 204);
+
+  EXPECT_TRUE(hub_.wait_empty(std::chrono::seconds(2)));
+
+  auto me = http_call(server_->port(), http::verb::get, "/v1/me", {}, token);
+  EXPECT_EQ(me.status, 403);
 }
