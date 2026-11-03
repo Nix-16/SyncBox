@@ -1,3 +1,4 @@
+#include <syncbox/common/audit.hpp>
 #include <syncbox/common/time.hpp>
 #include <syncbox/core/token.hpp>
 #include <syncbox/core/uuid.hpp>
@@ -295,6 +296,9 @@ int run_server(int argc, char** argv) {
 
   syncbox::server::AuthService auth(store.value());
   syncbox::server::OpService ops(store.value());
+  const char* audit_log_env = std::getenv("SYNCBOX_AUDIT_LOG");
+  syncbox::audit::configure(audit_log_env != nullptr ? audit_log_env : "");
+
   syncbox::net::WsHub hub;
   const char* admin_token_env = std::getenv("SYNCBOX_ADMIN_TOKEN");
   const std::string admin_token = admin_token_env != nullptr ? admin_token_env : "";

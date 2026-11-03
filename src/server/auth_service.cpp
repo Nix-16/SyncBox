@@ -1,5 +1,6 @@
 #include <syncbox/server/auth_service.hpp>
 
+#include <syncbox/common/audit.hpp>
 #include <syncbox/common/time.hpp>
 #include <syncbox/core/token.hpp>
 #include <syncbox/core/uuid.hpp>
@@ -43,11 +44,13 @@ Result<EnrollmentResult> AuthService::enroll(std::string_view enrollment_token,
     return token_record.error();
   }
   if (!token_record.value().has_value()) {
+    audit::auth_failure_for_token(enrollment_token, "invalid enrollment token");
     return make_error(ErrorCode::AuthRequired, "invalid enrollment token");
   }
   const EnrollmentTokenRecord& record = *token_record.value();
   const std::int64_t now = now_millis();
   if (record.used_at.has_value() || record.expires_at <= now) {
+    audit::auth_failure_for_token(enrollment_token, "expired or used enrollment token");
     return make_error(ErrorCode::AuthRequired, "invalid enrollment token");
   }
 
@@ -98,6 +101,9 @@ Result<EnrollmentResult> AuthService::enroll(std::string_view enrollment_token,
     return latest.error();
   }
 
+  audit::event("device_enrolled", {{"device_id", device.device_id},
+                                   {"platform", device.platform}});
+
   EnrollmentResult result;
   result.device_id = device.device_id;
   result.device_token = device_token.value();
@@ -119,22 +125,29 @@ Result<DeviceRecord> AuthService::authenticate(std::string_view bearer_token) {
     return device.error();
   }
   if (!device.value().has_value()) {
+    audit::auth_failure_for_token(bearer_token, "invalid device token");
     return make_error(ErrorCode::AuthRequired, "invalid device token");
   }
 
   const DeviceRecord& record = *device.value();
   if (record.token_hash.size() != bytes.size() ||
       !constant_time_equal(record.token_hash.data(), bytes.data(), bytes.size())) {
+    audit::auth_failure_for_token(bearer_token, "invalid device token");
     return make_error(ErrorCode::AuthRequired, "invalid device token");
   }
   if (record.status != "active") {
+    audit::auth_failure_for_token(bearer_token, "device revoked");
     return make_error(ErrorCode::DeviceRevoked, "device has been revoked");
   }
   return record;
 }
 
 Result<void> AuthService::revoke(std::string_view device_id, std::string_view reason) {
-  return store_.set_device_status(device_id, "revoked", std::string(reason));
+  auto result = store_.set_device_status(device_id, "revoked", std::string(reason));
+  if (result) {
+    audit::device_revoked(device_id, "admin", reason);
+  }
+  return result;
 }
 
 }  // namespace syncbox::server

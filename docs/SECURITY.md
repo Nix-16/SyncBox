@@ -278,6 +278,19 @@ a?b
 | blob 哈希不符 | `content_hash`, `declared`, `computed` |
 | GC 执行 | `min_retained_seq`, `deleted_rows`, `blob_bytes` |
 
+### 8.2.1 实现说明（M8）
+
+审计日志通过 `syncboxd` 的 `SYNCBOX_AUDIT_LOG` 配置（未设置则输出到 stderr），
+每行一个 JSON 对象：
+
+```json
+{"event":"auth_failure","token_hash_prefix":"39a5c1f0","reason":"invalid device token"}
+{"event":"device_revoked","device_id":"0192...","actor":"admin","reason":"..."}
+```
+
+`token_hash_prefix` 是 token SHA-256 的前 8 位十六进制；**原始 token 永不写入日志**。
+已接入事件：注册成功、认证失败（无效/已撤销）、设备撤销。
+
 ### 8.3 日志安全
 
 - 日志文件权限 `0600`；

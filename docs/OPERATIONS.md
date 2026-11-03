@@ -131,13 +131,28 @@ tar -C /var/lib/syncbox -czf /backup/blobs-$(date +%F).tar.gz blobs
 
 ---
 
-## 6. 日志与审计（部分）
+## 6. 日志与审计
 
-当前服务端尚未接入结构化审计日志（M8 待办）。部署时建议：
+审计日志为 JSON Lines，通过环境变量启用：
 
-- 由 systemd/journald 或容器日志收集 stdout/stderr；
-- 不要把 `device_token` 写入任何外部日志（SECURITY §8.1）；
-- 定期检查 `syncboxd admin fsck` 与磁盘水位。
+```bash
+export SYNCBOX_AUDIT_LOG=/var/log/syncbox/audit.log
+syncboxd ...
+```
+
+示例：
+
+```json
+{"event":"device_enrolled","device_id":"0192...","platform":"linux"}
+{"event":"auth_failure","token_hash_prefix":"39a5c1f0","reason":"invalid device token"}
+{"event":"device_revoked","device_id":"0192...","actor":"admin","reason":"..."}
+```
+
+- 只记录 token 哈希前缀，原始 token 不落盘；
+- 由 logrotate/journald 轮转；权限建议 `0600`；
+- 未设置 `SYNCBOX_AUDIT_LOG` 时输出到 stderr。
+
+部署建议：定期检查 `syncboxd admin fsck` 与磁盘水位；审计日志与业务数据分开备份。
 
 ---
 

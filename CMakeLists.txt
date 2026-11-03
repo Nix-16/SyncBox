@@ -36,6 +36,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 # Core library: version model, path rules, hashing, error model.
 # ---------------------------------------------------------------------------
 add_library(syncbox_core STATIC
+  src/common/audit.cpp
   src/core/error.cpp
   src/core/hash.cpp
   src/core/path.cpp

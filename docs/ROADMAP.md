@@ -310,7 +310,7 @@ M9 性能、跨平台验收与交付
 
 ## 9. M8 —— 安全加固与运维
 
-> 状态：**进行中（2026-11-03）**。限流、管理撤销（含 WS 断开）、fsck、operations GC、在线备份与运维文档已完成；审计/脱敏、fuzz、blob/change_log GC 待完成。
+> 状态：**进行中（2026-11-03）**。限流、管理撤销（含 WS 断开）、审计日志/脱敏、fsck、operations GC、在线备份与运维文档已完成；路径 fuzz（缺 clang）、blob/change_log GC、配额/慢速攻击防护待完成。
 
 ### 目标
 满足 SECURITY.md 全部验收；具备可运维性。

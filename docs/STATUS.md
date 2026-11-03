@@ -6,7 +6,7 @@
 | 当前里程碑 | **M6 完成；M7 按用户决定跳过；M8 进行中** |
 | 代码状态 | core + store + fs + net + server + client + 服务端限流/撤销；GUI 未实现（跳过） |
 | 构建状态 | **可构建**：CMake 3.22 + vcpkg（storage/unicode/crypto/networking/json） |
-| 测试状态 | 107 个测试；Linux Debug 与 ASan/UBSan 通过；三平台 CI 待运行 |
+| 测试状态 | 109 个测试；Linux Debug 与 ASan/UBSan 通过；三平台 CI 待运行 |
 | 版本控制 | Git 已初始化，远端 `github.com/Nix-16/SyncBox` |
 
 > 本文档是项目真实状态的唯一依据。任何“已完成”的声明必须在此处有对应条目与证据（文件路径、命令输出、测试名称）。**当前没有任何同步功能可用。**
@@ -163,11 +163,12 @@ CI 运行（run [39631445766](https://github.com/Nix-16/SyncBox/actions/runs/396
 | 备份 | `MaintenanceTest.BackupProducesUsableDatabase` | SQLite backup API 生成可打开副本 |
 | 运维文档 | `docs/OPERATIONS.md` | fsck/GC/备份/恢复流程 |
 | 管理撤销 | `ServerApiTest.AdminRevokeRequiresTokenAndClosesWebSocket` | 无 admin token 401；撤销后 204、WS 关闭、后续请求 403 |
-| 本地测试 | `ctest --preset dev` / `ctest --preset asan` | 107/107（Debug 与 ASan/UBSan） |
+| 审计日志 | `AuditTest.*` | JSON 行；只记录 token 哈希前缀，原文不出现；转义正确 |
+| 本地测试 | `ctest --preset dev` / `ctest --preset asan` | 109/109（Debug 与 ASan/UBSan） |
 
-> M8 尚未完成：审计日志与脱敏测试、路径 fuzz、blob/change_log GC。
+> M8 尚未完成：路径 fuzz（本机无 clang/libFuzzer，见 O-15）、blob/change_log/tombstone GC、配额与慢速攻击防护。
 > 限流按令牌哈希 + 类别计数，默认值来自 PROTOCOL §6；GC 目前只清理 operations。
-> 管理端点由 `SYNCBOX_ADMIN_TOKEN` 保护，未配置时禁用。
+> 管理端点由 `SYNCBOX_ADMIN_TOKEN` 保护，未配置时禁用；审计通过 `SYNCBOX_AUDIT_LOG` 配置。
 
 ### M4 进展证据（2026-10-27，Linux aarch64）
 
@@ -275,6 +276,7 @@ CI 运行（run [39813188841](https://github.com/Nix-16/SyncBox/actions/runs/398
 | O-12 | M3 验收原引用 TC-100..114（需要服务端+同步引擎，M5 才具备） | ROADMAP/TEST_PLAN | M3 门禁改为 UT-FS/TC-FS；同步用例在 M5 回归（本次已修订 ROADMAP M3） |
 | O-13 | FI-14（inotify 队列溢出）未做真实压力注入 | TEST_PLAN/ROADMAP | M5 集成测试中构造事件风暴验证 |
 | O-14 | M7 的 Qt6 在本环境不可用：无系统 `qt6-base-dev`、无 sudo、磁盘仅 ~3 GB，vcpkg `qtbase` 构建不可行 | M7 | **用户决定跳过 M7（2026-11-03）**；GUI 不计入当前交付，M9 不做 GUI 演示 |
+| O-15 | 本机未安装 clang/libFuzzer，路径解析 fuzz 无法执行 | TEST_PLAN TC-SEC / M8 | 安装 clang 后补 `-fsanitize=fuzzer` 目标；当前以单元测试覆盖路径拒绝集 |
 
 > 这些问题不影响 M0 文档作为基线成立；实现时必须在对应文档中补充决策并更新本表。
 
