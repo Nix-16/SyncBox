@@ -3,10 +3,10 @@
 | 项目 | 内容 |
 |---|---|
 | 报告日期 | 2026-10-27 |
-| 当前里程碑 | **M6 完成（三平台 CI 7/7）；M7 阻塞（Qt6 不可用）；M8 进行中** |
-| 代码状态 | core + store + fs + net + server + client + 服务端限流/撤销；GUI 未实现 |
+| 当前里程碑 | **M6 完成；M7 按用户决定跳过；M8 进行中** |
+| 代码状态 | core + store + fs + net + server + client + 服务端限流/撤销；GUI 未实现（跳过） |
 | 构建状态 | **可构建**：CMake 3.22 + vcpkg（storage/unicode/crypto/networking/json） |
-| 测试状态 | 102 个测试；Linux Debug 与 ASan/UBSan 通过；三平台 CI 待运行 |
+| 测试状态 | 106 个测试；Linux Debug 与 ASan/UBSan 通过；三平台 CI 待运行 |
 | 版本控制 | Git 已初始化，远端 `github.com/Nix-16/SyncBox` |
 
 > 本文档是项目真实状态的唯一依据。任何“已完成”的声明必须在此处有对应条目与证据（文件路径、命令输出、测试名称）。**当前没有任何同步功能可用。**
@@ -158,10 +158,14 @@ CI 运行（run [39631445766](https://github.com/Nix-16/SyncBox/actions/runs/396
 | 令牌桶单测 | `RateLimiterTest.*` | 限额、独立键、0=不限、reset 全部通过 |
 | HTTP 429 | `ServerApiTest.RateLimitsChangeRequests` | 第 2 次 `/changes` 返回 429 + `Retry-After: 60` |
 | 设备撤销 | `ServerApiTest.RevokedDeviceIsRejected` | 撤销后请求返回 403 `DEVICE_REVOKED` |
-| 本地测试 | `ctest --preset dev` / `ctest --preset asan` | 102/102（Debug 与 ASan/UBSan） |
+| fsck | `MaintenanceTest.Fsck*` | 完整性/FK 通过；缺失 blob 被报告 |
+| GC | `MaintenanceTest.GcRemovesOnlyExpiredOperations` | 仅删除超过保留期的幂等记录 |
+| 备份 | `MaintenanceTest.BackupProducesUsableDatabase` | SQLite backup API 生成可打开副本 |
+| 运维文档 | `docs/OPERATIONS.md` | fsck/GC/备份/恢复流程 |
+| 本地测试 | `ctest --preset dev` / `ctest --preset asan` | 106/106（Debug 与 ASan/UBSan） |
 
-> M8 尚未完成：审计日志、日志脱敏测试、路径 fuzz、WS 撤销断开、GC/fsck/备份工具、运维文档。
-> 限流按令牌哈希 + 类别计数，默认值来自 PROTOCOL §6。
+> M8 尚未完成：审计日志与脱敏测试、路径 fuzz、WS 撤销断开、blob/change_log GC。
+> 限流按令牌哈希 + 类别计数，默认值来自 PROTOCOL §6；GC 目前只清理 operations。
 
 ### M4 进展证据（2026-10-27，Linux aarch64）
 
@@ -268,7 +272,7 @@ CI 运行（run [39813188841](https://github.com/Nix-16/SyncBox/actions/runs/398
 | O-11 | 客户端 token 轮换机制（SECURITY 残余风险） | M8 | M8 |
 | O-12 | M3 验收原引用 TC-100..114（需要服务端+同步引擎，M5 才具备） | ROADMAP/TEST_PLAN | M3 门禁改为 UT-FS/TC-FS；同步用例在 M5 回归（本次已修订 ROADMAP M3） |
 | O-13 | FI-14（inotify 队列溢出）未做真实压力注入 | TEST_PLAN/ROADMAP | M5 集成测试中构造事件风暴验证 |
-| O-14 | M7 的 Qt6 在本环境不可用：无系统 `qt6-base-dev`、无 sudo、磁盘仅 ~3 GB，vcpkg `qtbase` 构建不可行 | M7 | 提供 Qt6 开发包或扩容磁盘后再执行 M7；当前转做 M8 |
+| O-14 | M7 的 Qt6 在本环境不可用：无系统 `qt6-base-dev`、无 sudo、磁盘仅 ~3 GB，vcpkg `qtbase` 构建不可行 | M7 | **用户决定跳过 M7（2026-11-03）**；GUI 不计入当前交付，M9 不做 GUI 演示 |
 
 > 这些问题不影响 M0 文档作为基线成立；实现时必须在对应文档中补充决策并更新本表。
 

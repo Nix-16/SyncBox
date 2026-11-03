@@ -6,6 +6,7 @@
 #include <syncbox/server/blob_store.hpp>
 #include <syncbox/net/ws_hub.hpp>
 #include <syncbox/server/auth_service.hpp>
+#include <syncbox/server/maintenance.hpp>
 #include <syncbox/server/op_service.hpp>
 #include <syncbox/store/migrations.hpp>
 #include <syncbox/store/server_store.hpp>
@@ -53,6 +54,9 @@ int print_usage() {
       << "  syncboxd admin create-space --db PATH --name NAME\n"
       << "  syncboxd admin enroll --db PATH --space SPACE_ID [--ttl-hours N]\n"
       << "  syncboxd admin revoke --db PATH --device DEVICE_ID [--reason TEXT]\n"
+      << "  syncboxd admin fsck --db PATH\n"
+      << "  syncboxd admin gc --db PATH [--operations-days N]\n"
+      << "  syncboxd admin backup --db PATH --out BACKUP_PATH\n"
       << "  syncboxd --version\n";
   return 0;
 }
@@ -69,7 +73,9 @@ int run_admin(int argc, char** argv) {
   std::string space_id;
   std::string device_id;
   std::string reason = "revoked by administrator";
+  std::string out_path;
   int ttl_hours = 24;
+  int operations_days = 7;
 
   for (int i = 2; i < argc; ++i) {
     const std::string argument = argv[i];
@@ -101,6 +107,18 @@ int run_admin(int argc, char** argv) {
       } catch (const std::exception&) {
         return fail("invalid --ttl-hours");
       }
+    } else if (argument == "--operations-days") {
+      auto value = next_value(argc, argv, i);
+      if (!value) return fail("--operations-days needs a value");
+      try {
+        operations_days = std::stoi(*value);
+      } catch (const std::exception&) {
+        return fail("invalid --operations-days");
+      }
+    } else if (argument == "--out") {
+      auto value = next_value(argc, argv, i);
+      if (!value) return fail("--out needs a value");
+      out_path = *value;
     } else if (command.empty()) {
       command = argument;
     } else {
@@ -171,6 +189,44 @@ int run_admin(int argc, char** argv) {
     if (!revoked) {
       return fail(revoked.error().message);
     }
+    return 0;
+  }
+
+  if (command == "fsck") {
+    auto report = syncbox::server::fsck(store.value());
+    if (!report) {
+      return fail(report.error().message);
+    }
+    std::cout << "entries=" << report.value().entries
+              << " versions=" << report.value().versions
+              << " changes=" << report.value().changes
+              << " blobs=" << report.value().blobs << '\n';
+    for (const auto& problem : report.value().problems) {
+      std::cerr << "problem: " << problem << '\n';
+    }
+    std::cout << (report.value().ok ? "ok" : "FAILED") << '\n';
+    return report.value().ok ? 0 : 1;
+  }
+
+  if (command == "gc") {
+    auto removed = syncbox::server::gc_operations(store.value(), syncbox::now_millis(),
+                                                  operations_days);
+    if (!removed) {
+      return fail(removed.error().message);
+    }
+    std::cout << "operations_removed=" << removed.value() << '\n';
+    return 0;
+  }
+
+  if (command == "backup") {
+    if (out_path.empty()) {
+      return fail("--out is required");
+    }
+    auto backed_up = syncbox::server::backup_database(db_path, out_path);
+    if (!backed_up) {
+      return fail(backed_up.error().message);
+    }
+    std::cout << "backup=" << out_path << '\n';
     return 0;
   }
 

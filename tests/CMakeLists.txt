@@ -23,7 +23,8 @@ add_executable(syncbox_unit_tests
   unit/engine_test.cpp
   unit/tls_test.cpp
   unit/http_client_test.cpp
-  unit/rate_limiter_test.cpp)
+  unit/rate_limiter_test.cpp
+  unit/maintenance_test.cpp)
 
 target_link_libraries(syncbox_unit_tests
   PRIVATE
