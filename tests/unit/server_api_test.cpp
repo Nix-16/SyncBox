@@ -591,6 +591,19 @@ TEST_F(ServerApiTest, RevokedDeviceIsRejected) {
   EXPECT_EQ(body["error"]["code"].get<std::string>(), "DEVICE_REVOKED");
 }
 
+TEST_F(ServerApiTest, ExpiredCursorReturns410) {
+  const std::string token = enroll_device();
+  ASSERT_TRUE(store_->set_meta("min_retained_seq", "100"));
+
+  auto response = http_call(server_->port(), http::verb::get,
+                            "/v1/spaces/" + space_id_ + "/changes?since=50", {},
+                            token);
+  EXPECT_EQ(response.status, 410);
+  auto body = nlohmann::json::parse(response.body);
+  EXPECT_EQ(body["error"]["code"].get<std::string>(), "CURSOR_EXPIRED");
+  EXPECT_EQ(body["error"]["details"]["min_retained_seq"].get<std::int64_t>(), 100);
+}
+
 TEST_F(ServerApiTest, AdminRevokeRequiresTokenAndClosesWebSocket) {
   // Rebuild the API/server with an admin token enabled.
   server_.reset();

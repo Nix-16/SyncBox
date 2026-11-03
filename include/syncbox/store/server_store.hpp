@@ -129,6 +129,9 @@ class ServerStore {
   [[nodiscard]] Result<void> insert_space(const SpaceRecord& space);
   [[nodiscard]] Result<std::optional<SpaceRecord>> find_space(std::string_view space_id);
 
+  [[nodiscard]] Result<std::optional<std::string>> get_meta(std::string_view key);
+  [[nodiscard]] Result<void> set_meta(std::string_view key, std::string_view value);
+
   [[nodiscard]] Result<void> insert_device(const DeviceRecord& device);
   [[nodiscard]] Result<std::optional<DeviceRecord>> find_device_by_token_hash(
       const std::vector<std::uint8_t>& token_hash);

@@ -84,6 +84,48 @@ Result<void> ServerStore::insert_space(const SpaceRecord& space) {
   return Result<void>{};
 }
 
+Result<std::optional<std::string>> ServerStore::get_meta(std::string_view key) {
+  auto statement =
+      Statement::prepare(db_, "SELECT value FROM server_meta WHERE key=?;");
+  if (!statement) {
+    return statement.error();
+  }
+  auto& stmt = statement.value();
+  if (auto r = check(stmt.bind_text(1, key)); !r) {
+    return r.error();
+  }
+  auto step = stmt.step();
+  if (!step) {
+    return step.error();
+  }
+  if (!step.value()) {
+    return std::optional<std::string>{};
+  }
+  return std::optional<std::string>{stmt.column_text(0)};
+}
+
+Result<void> ServerStore::set_meta(std::string_view key, std::string_view value) {
+  auto statement = Statement::prepare(
+      db_,
+      "INSERT INTO server_meta(key,value) VALUES(?,?) "
+      "ON CONFLICT(key) DO UPDATE SET value=excluded.value;");
+  if (!statement) {
+    return statement.error();
+  }
+  auto& stmt = statement.value();
+  if (auto r = check(stmt.bind_text(1, key)); !r) {
+    return r.error();
+  }
+  if (auto r = check(stmt.bind_text(2, value)); !r) {
+    return r.error();
+  }
+  auto step = stmt.step();
+  if (!step) {
+    return step.error();
+  }
+  return Result<void>{};
+}
+
 Result<std::optional<SpaceRecord>> ServerStore::find_space(std::string_view space_id) {
   auto statement = Statement::prepare(
       db_, "SELECT space_id,name,created_at,state FROM spaces WHERE space_id=?;");

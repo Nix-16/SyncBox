@@ -2,6 +2,8 @@
 
 #include <sqlite3.h>
 
+#include <algorithm>
+#include <exception>
 #include <string>
 #include <string_view>
 
@@ -149,6 +151,95 @@ Result<int> gc_blobs(ServerStore& store, BlobStore& blobs, std::int64_t now_ms,
     }
   }
   return removed;
+}
+
+Result<int> gc_change_log(ServerStore& store, std::int64_t now_ms, int retention_days) {
+  if (retention_days < 0) {
+    return make_error(ErrorCode::BadRequest, "retention_days must be >= 0");
+  }
+  const std::int64_t cutoff =
+      now_ms - static_cast<std::int64_t>(retention_days) * 24 * 3600 * 1000;
+
+  std::int64_t active_devices = 0;
+  std::int64_t oldest_ack = 0;
+  {
+    auto statement = Statement::prepare(
+        store.db(),
+        "SELECT COUNT(*), COALESCE(MIN(last_ack_seq), 0) FROM devices "
+        "WHERE status='active';");
+    if (!statement) {
+      return statement.error();
+    }
+    auto step = statement.value().step();
+    if (!step) {
+      return step.error();
+    }
+    if (!step.value()) {
+      return 0;
+    }
+    active_devices = statement.value().column_int64(0);
+    oldest_ack = statement.value().column_int64(1);
+  }
+
+  std::int64_t horizon = 0;
+  {
+    auto statement = Statement::prepare(
+        store.db(),
+        "SELECT COALESCE(MAX(seq), 0) FROM change_log WHERE created_at < ?;");
+    if (!statement) {
+      return statement.error();
+    }
+    if (auto bound = statement.value().bind_int64(1, cutoff); !bound) {
+      return bound.error();
+    }
+    auto step = statement.value().step();
+    if (!step) {
+      return step.error();
+    }
+    if (!step.value()) {
+      return 0;
+    }
+    horizon = statement.value().column_int64(0);
+  }
+
+  std::int64_t watermark = active_devices == 0 ? horizon : std::min(oldest_ack, horizon);
+
+  auto existing = store.get_meta("min_retained_seq");
+  if (!existing) {
+    return existing.error();
+  }
+  if (existing.value().has_value()) {
+    try {
+      watermark = std::max(
+          watermark, static_cast<std::int64_t>(std::stoll(*existing.value())));
+    } catch (const std::exception&) {
+      return make_error(ErrorCode::DatabaseError,
+                        "min_retained_seq is not a valid integer");
+    }
+  }
+
+  if (watermark <= 0) {
+    return 0;
+  }
+
+  auto statement =
+      Statement::prepare(store.db(), "DELETE FROM change_log WHERE seq < ?;");
+  if (!statement) {
+    return statement.error();
+  }
+  if (auto bound = statement.value().bind_int64(1, watermark); !bound) {
+    return bound.error();
+  }
+  auto step = statement.value().step();
+  if (!step) {
+    return step.error();
+  }
+
+  auto stored = store.set_meta("min_retained_seq", std::to_string(watermark));
+  if (!stored) {
+    return stored.error();
+  }
+  return store.db().changes();
 }
 
 Result<void> backup_database(const std::string& source_path,

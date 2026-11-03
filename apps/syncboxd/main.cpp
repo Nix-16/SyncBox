@@ -79,6 +79,7 @@ int run_admin(int argc, char** argv) {
   std::string blob_root = "blobs";
   int ttl_hours = 24;
   int operations_days = 7;
+  int changes_days = 90;
 
   for (int i = 2; i < argc; ++i) {
     const std::string argument = argv[i];
@@ -126,6 +127,14 @@ int run_admin(int argc, char** argv) {
       auto value = next_value(argc, argv, i);
       if (!value) return fail("--blob-root needs a value");
       blob_root = *value;
+    } else if (argument == "--changes-days") {
+      auto value = next_value(argc, argv, i);
+      if (!value) return fail("--changes-days needs a value");
+      try {
+        changes_days = std::stoi(*value);
+      } catch (const std::exception&) {
+        return fail("invalid --changes-days");
+      }
     } else if (command.empty()) {
       command = argument;
     } else {
@@ -231,8 +240,14 @@ int run_admin(int argc, char** argv) {
     if (!removed_blobs) {
       return fail(removed_blobs.error().message);
     }
+    auto removed_changes = syncbox::server::gc_change_log(
+        store.value(), syncbox::now_millis(), changes_days);
+    if (!removed_changes) {
+      return fail(removed_changes.error().message);
+    }
     std::cout << "operations_removed=" << removed.value()
-              << " blobs_removed=" << removed_blobs.value() << '\n';
+              << " blobs_removed=" << removed_blobs.value()
+              << " changes_removed=" << removed_changes.value() << '\n';
     return 0;
   }
 

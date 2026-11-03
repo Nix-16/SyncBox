@@ -356,10 +356,19 @@ net::HttpResponse Api::handle(const net::HttpRequest& request) {
   }
 
   if (is_get(request) && target.path == "/v1/health") {
+    std::int64_t min_retained = 0;
+    auto retained = store_.get_meta("min_retained_seq");
+    if (retained && retained.value().has_value()) {
+      try {
+        min_retained = std::stoll(*retained.value());
+      } catch (const std::exception&) {
+        min_retained = 0;
+      }
+    }
     return json_response(200, nlohmann::json{{"status", "ok"},
                                              {"protocol", 1},
                                              {"server_time_ms", now_millis()},
-                                             {"min_retained_seq", 0}});
+                                             {"min_retained_seq", min_retained}});
   }
 
   if (is_post(request) && target.path == "/v1/enroll") {
@@ -661,6 +670,29 @@ net::HttpResponse Api::handle(const net::HttpRequest& request) {
       if (!since.has_value() || *since < 0) {
         return error_response(ErrorCode::BadRequest, "invalid since value");
       }
+
+      std::int64_t min_retained = 0;
+      auto retained = store_.get_meta("min_retained_seq");
+      if (!retained) {
+        return error_response(retained.error());
+      }
+      if (retained.value().has_value()) {
+        try {
+          min_retained = std::stoll(*retained.value());
+        } catch (const std::exception&) {
+          min_retained = 0;
+        }
+      }
+      if (*since < min_retained) {
+        return json_response(
+            410, nlohmann::json{
+                     {"error",
+                      {{"code", "CURSOR_EXPIRED"},
+                       {"message", "cursor is older than the retention window"},
+                       {"retryable", false},
+                       {"details", {{"min_retained_seq", min_retained}}}}}});
+      }
+
       int limit = 200;
       if (const auto it = target.query.find("limit"); it != target.query.end()) {
         const auto parsed = parse_int64(it->second);

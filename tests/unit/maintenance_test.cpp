@@ -95,6 +95,61 @@ TEST(MaintenanceTest, GcRemovesOnlyExpiredOperations) {
   EXPECT_EQ(remaining, 1);
 }
 
+TEST(MaintenanceTest, GcChangeLogRespectsAckWatermark) {
+  TempDirectory directory;
+  auto store = syncbox::ServerStore::open(directory.file("server.db").string());
+  ASSERT_TRUE(store);
+  ASSERT_TRUE(store.value().migrate());
+
+  const std::string space_id = syncbox::generate_uuid_v7();
+  ASSERT_TRUE(store.value().insert_space({space_id, "space", syncbox::now_millis(), "active"}));
+
+  syncbox::DeviceRecord device;
+  device.device_id = syncbox::generate_uuid_v7();
+  device.space_id = space_id;
+  device.display_name = "device";
+  device.platform = "linux";
+  device.token_hash = std::vector<std::uint8_t>(32, 0x11);
+  device.created_at = 1;
+  ASSERT_TRUE(store.value().insert_device(device));
+
+  const std::int64_t now = syncbox::now_millis();
+  syncbox::ChangeRecord change;
+  change.space_id = space_id;
+  change.file_id = syncbox::FileId{syncbox::generate_uuid_v7()};
+  change.revision = syncbox::Revision{1};
+  change.op = syncbox::OpKind::Create;
+  change.path = "a.txt";
+  change.content_hash = syncbox::ContentHash::from_hex(std::string(64, 'a'));
+  change.size = 3;
+  change.device_id = device.device_id;
+  change.created_at = now - 120LL * 24 * 3600 * 1000;
+  auto first = store.value().append_change(change);
+  auto second = store.value().append_change(change);
+  ASSERT_TRUE(first);
+  ASSERT_TRUE(second);
+
+  // Unacked active device pins the watermark at 0.
+  auto removed_none = syncbox::server::gc_change_log(store.value(), now, 90);
+  ASSERT_TRUE(removed_none) << removed_none.error().message;
+  EXPECT_EQ(removed_none.value(), 0);
+
+  ASSERT_TRUE(store.value().update_device_ack(device.device_id, syncbox::Seq{1000}));
+
+  auto removed = syncbox::server::gc_change_log(store.value(), now, 90);
+  ASSERT_TRUE(removed) << removed.error().message;
+  // The watermark row itself is retained (cursor == watermark is still valid).
+  EXPECT_EQ(removed.value(), 1);
+
+  EXPECT_EQ(syncbox::test::scalar_int(store.value().db(),
+                                      "SELECT COUNT(*) FROM change_log;"),
+            1);
+  auto watermark = store.value().get_meta("min_retained_seq");
+  ASSERT_TRUE(watermark);
+  ASSERT_TRUE(watermark.value().has_value());
+  EXPECT_EQ(std::stoll(*watermark.value()), second.value().value);
+}
+
 TEST(MaintenanceTest, GcRemovesOnlyUnreferencedOldBlobs) {
   TempDirectory directory;
   auto store = syncbox::ServerStore::open(directory.file("server.db").string());

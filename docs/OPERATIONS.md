@@ -40,7 +40,7 @@ syncboxd --db /var/lib/syncbox/server.db \
 | `syncboxd admin enroll --db PATH --space ID [--ttl-hours N]` | 签发一次性注册令牌 |
 | `syncboxd admin revoke --db PATH --device ID [--reason TEXT]` | 撤销设备（立即影响后续 HTTP 请求） |
 | `syncboxd admin fsck --db PATH` | 完整性检查 |
-| `syncboxd admin gc --db PATH [--blob-root PATH] [--operations-days N]` | 清理过期幂等记录与未引用 blob |
+| `syncboxd admin gc --db PATH [--blob-root PATH] [--operations-days N] [--changes-days N]` | 清理幂等记录、未引用 blob 与过期变更 |
 | `syncboxd admin backup --db PATH --out BACKUP` | 一致性备份 |
 
 ### 2.1 通过 HTTP 撤销设备
@@ -93,17 +93,22 @@ ok
 syncboxd admin gc --db /var/lib/syncbox/server.db \
                   --blob-root /var/lib/syncbox/blobs \
                   --operations-days 7
-# operations_removed=123 blobs_removed=4
+# operations_removed=123 blobs_removed=4 changes_removed=900
 ```
 
 清理内容：
 
 - `operations`：超过 `--operations-days`（默认 7 天）的幂等回放记录；
-- `blobs`：`ref_count=0` 且创建超过 24 小时的 blob（DB 行 + 块文件）。
+- `blobs`：`ref_count=0` 且创建超过 24 小时的 blob（DB 行 + 块文件）；
+- `change_log`：低于保留水位的变更。水位 =
+  `min(所有 active 设备 last_ack_seq 的最小值, --changes-days 天前的最大 seq)`，
+  默认 90 天；水位写入 `server_meta.min_retained_seq`，只增不减。
 
-**尚未自动 GC**：`change_log` 与 tombstone。它们依赖所有活跃设备的
-`last_ack_seq` 与 90 天水位（DATABASE §2.5），留待 M9。在此之前变更历史会持续增长，
-请监控磁盘并保留备份。
+水位生效后，`GET /changes?since=<水位-1>` 返回 `410 CURSOR_EXPIRED`，客户端应执行
+全量快照。`/v1/health` 会报告 `min_retained_seq`。
+
+**尚未自动 GC**：tombstone（`entries.deleted=1`）。它与 `versions` 有外键关联，
+删除会同时丢失版本历史；是否归档/删除需在 M9 明确（见 STATUS O-16）。
 
 ---
 
@@ -175,6 +180,6 @@ syncboxd ...
 
 - 结构化审计日志与脱敏测试；
 - WS 会话在设备撤销后立即断开；
-- change_log/tombstone 的 GC（需设备 ACK 水位）；
+- tombstone 与版本历史的归档策略（O-16）；
 - 路径 fuzz（缺 clang）与依赖 CVE 扫描；
 - 监控指标与告警。

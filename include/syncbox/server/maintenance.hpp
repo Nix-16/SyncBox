@@ -32,6 +32,12 @@ struct FsckReport {
 [[nodiscard]] Result<int> gc_blobs(ServerStore& store, BlobStore& blobs,
                                    std::int64_t now_ms, int older_than_hours);
 
+// Deletes change_log rows below the retention watermark and records the
+// watermark in server_meta. Watermark = min(oldest active-device ACK,
+// seq older than retention_days); it never moves backwards.
+[[nodiscard]] Result<int> gc_change_log(ServerStore& store, std::int64_t now_ms,
+                                        int retention_days);
+
 // Consistent online backup using SQLite's backup API.
 [[nodiscard]] Result<void> backup_database(const std::string& source_path,
                                            const std::string& destination_path);
