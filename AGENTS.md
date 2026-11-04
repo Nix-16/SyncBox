@@ -153,12 +153,13 @@ cmake --build --preset dev
 ctest --preset dev --output-on-failure
 ```
 
-- 可执行文件：`build/dev/syncbox`、`build/dev/syncboxd`（当前仅 `--version` / `--help`）。
+- 可执行文件：`build/dev/syncbox`（`enroll`/`login`/`sync`/`watch`/`status`/`conflicts`）、
+  `build/dev/syncboxd`（服务端与 `admin create-space/enroll/revoke/fsck/gc/backup`）。
 - `SYNCBOX_SANITIZE=ON`（`asan` preset）仅在 GCC/Clang 下可用。
 - 新增源文件后必须重新运行配置步骤。
 - 修改 `vcpkg.json` 后必须提交新的 `builtin-baseline` 并说明原因。
-- 依赖按里程碑通过 vcpkg feature 启用（当前 `dev`/`release`/`asan` preset 已启用
-  `storage;unicode;crypto`）；`networking`/`json` 在 M4 启用。
+- 依赖按里程碑通过 vcpkg feature 启用（当前 preset 已启用
+  `storage;unicode;crypto;networking;json`）。
 
 要求：
 

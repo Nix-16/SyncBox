@@ -54,7 +54,7 @@ ctest --preset dev
 
 产物：`build/dev/syncbox`、`build/dev/syncboxd`。
 
-当前里程碑为 M1，两个可执行文件仅支持 `--version` / `--help`，**尚不具备同步能力**。
+产物为客户端 CLI 与服务端；用法见下文“快速开始”。
 
 Windows 下若未安装 Ninja，可改用 Visual Studio 生成器：
 

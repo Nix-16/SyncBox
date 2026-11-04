@@ -226,7 +226,8 @@ install(TARGETS syncbox syncboxd
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 install(FILES README.md AGENTS.md DESTINATION ${CMAKE_INSTALL_DOCDIR})
-install(DIRECTORY docs/ DESTINATION ${CMAKE_INSTALL_DOCDIR})
+# Keep the docs/ prefix so links inside README.md and AGENTS.md resolve.
+install(DIRECTORY docs/ DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
 install(PROGRAMS scripts/demo.sh
   DESTINATION ${CMAKE_INSTALL_BINDIR}
   RENAME syncbox-demo)

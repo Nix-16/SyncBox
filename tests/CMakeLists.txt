@@ -79,3 +79,8 @@ add_executable(syncbox_transfer_benchmark bench/transfer_benchmark.cpp)
 target_link_libraries(syncbox_transfer_benchmark PRIVATE
   syncbox_core syncbox_store syncbox_net syncbox_server syncbox_client)
 syncbox_set_warnings(syncbox_transfer_benchmark)
+
+add_executable(syncbox_latency_benchmark bench/latency_benchmark.cpp)
+target_link_libraries(syncbox_latency_benchmark PRIVATE
+  syncbox_core syncbox_store syncbox_net syncbox_server syncbox_client)
+syncbox_set_warnings(syncbox_latency_benchmark)

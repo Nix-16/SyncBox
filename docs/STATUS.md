@@ -181,7 +181,8 @@ CI 运行（run [39631445766](https://github.com/Nix-16/SyncBox/actions/runs/396
 | 客户端注册 | `syncbox enroll` 新增；配置文件权限 0600 |
 | 端到端演示 | `bash scripts/demo.sh`：新建、修改、冲突副本全部通过 |
 | 打包 | `cmake --build --preset dev --target package` 生成 `syncbox-0.1.0-Linux.tar.gz` / `.zip`（含可执行文件、docs、演示脚本） |
-| 待完成 | PF-01/03/04/05/06/09 基准、安装包运行时依赖打包、GUI（M7 跳过） |
+| PF-01 延迟 | `./build/dev/tests/syncbox_latency_benchmark 20`：p50 6 ms、p95 7 ms（回环，引擎往返） |
+| 待完成 | PF-03/04/05/06/09 基准、安装包运行时依赖打包、GUI（M7 跳过） |
 > 限流按令牌哈希 + 类别计数，默认值来自 PROTOCOL §6；GC 目前只清理 operations。
 > 管理端点由 `SYNCBOX_ADMIN_TOKEN` 保护，未配置时禁用；审计通过 `SYNCBOX_AUDIT_LOG` 配置。
 
@@ -302,14 +303,15 @@ CI 运行（run [39813188841](https://github.com/Nix-16/SyncBox/actions/runs/398
 
 | 需求 | 差距 |
 |---|---|
-| 可运行的同步工具 | 仅有 CLI 骨架，无同步能力 |
-| 三平台支持 | 构建、测试与三平台文件监控均已由 CI 验证；同步逻辑尚未实现 |
-| 服务端 | 仅有 `--version` 骨架，无 HTTP 服务 |
-| 数据库 | 两套 schema、迁移与 Repository 已实现并测试；尚未被同步引擎使用 |
-| 协议 | 仅文档，无实现 |
-| 测试 | 56 个单元测试通过；无端到端集成/完整故障注入/性能基准套件（扫描基准已有） |
-| 性能 | 无任何测量 |
-| 安全 | 无实现、无审计 |
+| 可运行的同步工具 | CLI + 守护同步 + 服务端已实现并演示；无 GUI（M7 跳过） |
+| 三平台支持 | 三平台 CI 构建/测试通过；平台运行时行为由 CI 覆盖 |
+| 服务端 | HTTP/TLS/WS/WSS、认证、CAS、变更流、Blob、限流、审计、GC、备份已实现 |
+| 数据库 | 两套 schema、迁移、Repository、operations/blob/change_log GC 已实现 |
+| 协议 | HTTP/WS 端点已实现；无独立协议一致性测试套件 |
+| 测试 | 114 个单元/集成测试；fuzz 与依赖 CVE 扫描未执行（O-15） |
+| 性能 | PF-01/02 与 10k 扫描已测；PF-03/04/05/06/09 未测 |
+| 安全 | 认证/TLS/路径/限流/审计/撤销/慢速攻击已实现；缺 fuzz/CVE/配额/tombstone GC |
+| 文档 | 设计、运维、演示脚本、打包已有；无 GUI 文档/演示 |
 | 文档 | 设计文档、README、构建说明已有；演示脚本仍缺失 |
 
 ---
